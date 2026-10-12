@@ -1,0 +1,38 @@
+---
+# Stop and disable the units of the package variants that are about to be
+# removed. The deb prerm does not stop its service, so without this the old
+# variant keeps running next to the new one; the rpm removal stops it, which
+# makes this a no-op there. Needs synapse_conflicting_packages (select.yml).
+# A unit that is absent is skipped, and one that is already stopped and
+# disabled reports no change. The chosen package's unit is never listed.
+- name: Look for units of the other synapse variants
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=LoadState,ActiveState,UnitFileState
+      - "{{ item }}.service"
+  loop: "{{ synapse_conflicting_packages }}"
+  register: synapse_other_variant_units
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Stop and disable the units of the other synapse variants
+  ansible.builtin.systemd:
+    name: "{{ item.item }}.service"
+    state: stopped
+    enabled: false
+  loop: "{{ synapse_other_variant_units.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: synapse_other_variant_stop
+  when:
+    - item.rc == 0
+    - "'LoadState=loaded' in item.stdout_lines"
+    - >-
+      ('ActiveState=active' in item.stdout_lines)
+      or ('ActiveState=activating' in item.stdout_lines)
+      or ('ActiveState=reloading' in item.stdout_lines)
+      or ('UnitFileState=enabled' in item.stdout_lines)
+      or ('UnitFileState=enabled-runtime' in item.stdout_lines)
