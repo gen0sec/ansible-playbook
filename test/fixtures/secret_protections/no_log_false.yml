@@ -1,0 +1,5 @@
+---
+- name: no_log false
+  ansible.builtin.set_fact:
+    synapse_x: "{{ synapse_config_platform_api_key }}"
+  no_log: false

@@ -1,0 +1,4 @@
+---
+- name: Fact without no_log
+  ansible.builtin.set_fact:
+    synapse_x: "{{ gen0sec_api_key }}"

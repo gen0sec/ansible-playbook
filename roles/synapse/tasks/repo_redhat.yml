@@ -1,19 +1,69 @@
 ---
 # RHEL family: the signing key, then a .repo with the credential. Packages and
 # repository metadata are both signed, so both checks stay on.
+# Without the Gen0Sec repository: after a run with a wrong key its repo file is
+# still here with that key, and dnf would fail on it before this run could
+# replace the credential.
 - name: Install gnupg and CA certificates
   ansible.builtin.dnf:
     name:
       - gnupg2
       - ca-certificates
     state: present
+    disablerepo: gen0sec
 
-# The fingerprint is checked by the module before the key is imported.
+# The key is fetched from the keyserver and must be exactly the pinned key
+# (see verify_key.yml) before it is written to a local file. rpm and dnf then
+# read that file, never the keyserver, so they cannot import another key.
+- name: Create the rpm key directory
+  ansible.builtin.file:
+    path: "{{ synapse_rpm_key_file | dirname }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Check the installed key file
+  ansible.builtin.include_tasks: verify_key.yml
+  vars:
+    synapse_key_file: "{{ synapse_rpm_key_file }}"
+    synapse_key_fatal: false
+
+# Kept apart from synapse_key_file_ok, which the check of the download below
+# sets again: the block's condition is tested for each of its tasks.
+- name: Note whether the key file is already the signing key
+  ansible.builtin.set_fact:
+    synapse_key_installed: "{{ synapse_key_file_ok }}"
+
+- name: Install the signing key file
+  when: not (synapse_key_installed | bool)
+  block:
+    - name: Download and check the signing key
+      ansible.builtin.include_tasks: fetch_key.yml
+      vars:
+        synapse_key_download: "{{ synapse_rpm_key_file }}.download"
+
+    - name: Write the signing key file
+      ansible.builtin.copy:
+        src: "{{ synapse_rpm_key_file }}.download"
+        dest: "{{ synapse_rpm_key_file }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0644'
+
+  always:
+    - name: Remove the downloaded key
+      ansible.builtin.file:
+        path: "{{ synapse_rpm_key_file }}.download"
+        state: absent
+
 - name: Import the signing key
   ansible.builtin.rpm_key:
-    key: "{{ synapse_keyserver_url }}/pks/lookup?op=get&search=0x{{ synapse_repo_key_fingerprint }}"
+    key: "{{ synapse_rpm_key_file }}"
     fingerprint: "{{ synapse_repo_key_fingerprint }}"
     state: present
+  when: not ansible_check_mode
 
 # Create the file empty and root-only first, so the credential is never in a
 # file with looser permissions, even briefly.
@@ -45,7 +95,7 @@
     password: "{{ gen0sec_repo_key }}"
     gpgcheck: true
     repo_gpgcheck: true
-    gpgkey: "{{ synapse_keyserver_url }}/pks/lookup?op=get&search=0x{{ synapse_repo_key_fingerprint }}"
+    gpgkey: "file://{{ synapse_rpm_key_file }}"
     enabled: true
     reposdir: "{{ synapse_yum_reposdir }}"
     file: gen0sec

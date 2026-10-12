@@ -1,0 +1,45 @@
+---
+# Is the key file at synapse_key_file the Gen0Sec signing key, and nothing else?
+#
+# The file must hold exactly one primary key (one `pub:` record) and the
+# fingerprint that follows it must equal synapse_repo_key_fingerprint. A file
+# with the pinned key plus a second key is refused: whatever imports the file
+# imports every key in it, so checking only the first fingerprint would let a
+# second key through. Subkey fingerprints (`sub:`) are not compared.
+#
+# Inputs:  synapse_key_file   path of the key, armored or binary
+#          synapse_key_fatal  true to fail the play on a mismatch
+# Output:  synapse_key_file_ok  true when the file is exactly the pinned key
+- name: Read the fingerprints in the key file
+  ansible.builtin.command:
+    argv: [gpg, --show-keys, --with-colons, "{{ synapse_key_file }}"]
+  register: synapse_key_show
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Decide whether the key file is exactly the signing key
+  ansible.builtin.set_fact:
+    synapse_key_file_ok: >-
+      {{ synapse_key_show.rc == 0
+         and (synapse_key_show.stdout_lines | select('match', '^pub:') | list | length) == 1
+         and (synapse_key_show.stdout_lines
+              | zip(synapse_key_show.stdout_lines[1:])
+              | selectattr('0', 'match', '^pub:')
+              | selectattr('1', 'match', '^fpr:')
+              | map(attribute='1')
+              | map('regex_replace', '^fpr:+([0-9A-Fa-f]+):.*$', '\1')
+              | map('upper')
+              | list) == [synapse_repo_key_fingerprint | upper] }}
+
+- name: Refuse a key file that is not exactly the signing key
+  ansible.builtin.assert:
+    that: synapse_key_file_ok | bool
+    fail_msg: >-
+      {{ synapse_key_file }} is not exactly the key with the fingerprint
+      {{ synapse_repo_key_fingerprint }}: it must hold that one primary key
+      and no other. Nothing was installed from it.
+    quiet: true
+  when:
+    - synapse_key_fatal | bool
+    - not ansible_check_mode

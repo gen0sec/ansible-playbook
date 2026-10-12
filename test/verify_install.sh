@@ -63,13 +63,16 @@ for other in synapse-agent synapse-agent-ml synapse-proxy synapse-proxy-ml; do
   fi
 done
 
-# 3. Files: config 0640, the credential file 0600, both root-owned.
+# 3. Files: config 0640, the credential file 0600, /etc/synapse (and the proxy's
+#    certs) 0750 as the packages ship them, all root-owned.
 check_file() { # path mode
   local got; got="$(stat -c '%a %U:%G' "$1" 2>/dev/null)" || { fail "file: $1 is missing"; return; }
   if [ "$got" = "$2 root:root" ]; then ok "file: $1 is $got"; else fail "file: $1 is '$got', want '$2 root:root'"; fi
 }
 check_file /etc/synapse/config.yaml 640
 check_file "$cred" 600
+check_file /etc/synapse 750
+case "$want_pkg" in synapse-proxy*) check_file /etc/synapse/certs 750 ;; esac
 
 # 4. The credential is on disk in the credential file and nowhere else. The key
 #    is handed to grep as a pattern file on a descriptor, not as an argument.

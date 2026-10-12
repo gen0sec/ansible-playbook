@@ -1,0 +1,7 @@
+---
+- name: Copy without diff false
+  ansible.builtin.copy:
+    content: "{{ gen0sec_repo_key }}"
+    dest: /tmp/x
+    mode: "0600"
+  no_log: true

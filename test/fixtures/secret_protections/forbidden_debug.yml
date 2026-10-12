@@ -1,0 +1,5 @@
+---
+- name: Print the key
+  ansible.builtin.debug:
+    msg: "{{ gen0sec_api_key }}"
+  no_log: true

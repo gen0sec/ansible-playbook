@@ -18,11 +18,11 @@ This role installs Synapse from the Gen0Sec package repositories and configures 
 ## What This Role Does
 
 1. Checks the OS (Debian family, or RHEL family with dnf), the key and the variables, and picks the package
-2. Removes a legacy `synapse.service` that matches the old role exactly
-3. Sets up the APT or DNF repository with the key in a root-only file, and verifies the signing key fingerprint
-4. Installs dependencies (curl, sed), and optionally ClamAV and Redis
+2. Sets up the APT or DNF repository with the key in a root-only file; the signing key must be exactly one primary key with the pinned fingerprint. The package index is refreshed whenever the credential, the key or the source changed
+3. Installs dependencies (curl, sed), and optionally ClamAV and Redis
+4. Removes a legacy `synapse.service` that matches the old role exactly (only once the repository works, so a wrong key leaves the host as it was)
 5. Removes the other three Synapse packages and installs the chosen one
-6. Renders `/etc/synapse/config.yaml` (0640) and validates it with `synapse --check-config` when supported
+6. Renders `/etc/synapse/config.yaml` (0640), checked with `synapse --check-config` before it replaces the live file when supported; `/etc/synapse` is 0750
 7. Restarts on a config change, then enables and starts the unit named after the package
 
 Secret files are re-checked to be root-only on every run, and tasks that handle
