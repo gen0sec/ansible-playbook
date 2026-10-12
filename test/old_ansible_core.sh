@@ -24,7 +24,14 @@ if [ "${1:-}" != "--inside" ]; then
 fi
 
 ROOT=/repo
-ansible --version | head -1
+version_line="$(ansible --version | head -1)"
+echo "$version_line"
+# The point is the oldest supported core: if the image ever ships another one,
+# this test would pass without testing it.
+case "$version_line" in
+  *"[core 2.14."*) ;;
+  *) echo "FAIL: expected ansible-core 2.14.x, got: $version_line" >&2; exit 1 ;;
+esac
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 failures=0
