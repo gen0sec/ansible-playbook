@@ -2,6 +2,17 @@
 # Default variables for fail2ban role
 fail2ban_enabled: false
 gen0sec_api_key: "{{ g0s_api_key | default('') }}"  # g0s_api_key is the legacy alias  # noqa: var-naming[no-role-prefix]
-gen0sec_expiration: 600  # noqa: var-naming[no-role-prefix]
+# Optional overrides for the action. Left empty, the action's own defaults
+# apply (expiration: the jail's bantime; host: the short hostname), and no
+# gen0sec.local is written. gen0sec_expiration keeps its name for existing users.
+gen0sec_expiration: ""  # noqa: var-naming[no-role-prefix]
+fail2ban_host: ""
 fail2ban_jail_enabled: true
 fail2ban_backend: systemd
+# false skips the package installs and the service (used by test/fail2ban_render.sh).
+fail2ban_manage_service: true
+# The action reads the key from /etc/fail2ban/gen0sec.headers by default, so
+# change this only to render into a scratch directory.
+fail2ban_config_dir: /etc/fail2ban
+fail2ban_file_owner: root
+fail2ban_file_group: root
