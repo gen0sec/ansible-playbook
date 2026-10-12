@@ -3,7 +3,6 @@
   hosts: all
   become: true
   vars:
-    synapse_version: "0.8.8"
     # Optional services
     clamav_enabled: true  # Set to false to disable ClamAV installation
     redis_enabled: true   # Set to false to disable Redis installation
@@ -29,11 +28,9 @@
     - name: Display installation summary
       ansible.builtin.debug:
         msg:
-          - "Synapse {{ synapse_version }} installed successfully using {{ synapse_install_method | default('binary') }} method"
-          - "Service is enabled but not started"
-          - "Before starting the service, ensure your API key is set in /etc/synapse/config.yaml"
-          - "You can get your API key from https://dash.gen0sec.com/settings/api-keys"
-          - "Then run 'systemctl start synapse' to start the service"
+          - "Installed {{ synapse_package }} from the Gen0Sec package repository; the unit {{ synapse_package }} is enabled and {{ synapse_service_state }}"
+          - "Configuration: /etc/synapse/config.yaml"
+          - "Without an API key synapse runs standalone. To connect it to the platform, set gen0sec_api_key (create one at https://dash.gen0sec.com/settings/api-keys) and run the playbook again"
           - "ClamAV: {{ 'enabled' if clamav_enabled | bool else 'disabled' }}"
           - "Redis: {{ 'enabled' if redis_enabled | bool else 'disabled' }}"
           - "Fail2Ban integration: {{ 'enabled' if fail2ban_enabled | bool else 'disabled' }}"

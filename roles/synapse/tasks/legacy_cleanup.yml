@@ -1,0 +1,67 @@
+---
+# Before the package install, the role wrote /etc/systemd/system/synapse.service
+# and ran /usr/local/bin/synapse from it. The package ships its own unit, named
+# after the package, so the old one must go or two daemons would fight over the
+# interface. It is removed only when its ExecStart is the exact line the old
+# role wrote; a unit someone edited is left alone, with a warning.
+- name: Look for the unit the earlier role installed
+  ansible.builtin.stat:
+    path: /etc/systemd/system/synapse.service
+  register: synapse_legacy_unit
+
+- name: Read it
+  ansible.builtin.slurp:
+    src: /etc/systemd/system/synapse.service
+  register: synapse_legacy_unit_content
+  when: synapse_legacy_unit.stat.exists
+
+- name: Decide whether it is the earlier role's unit
+  ansible.builtin.set_fact:
+    synapse_legacy_unit_is_ours: >-
+      {{ synapse_legacy_unit.stat.exists
+         and (synapse_legacy_unit_content.content | b64decode).splitlines()
+             | select('equalto', 'ExecStart=/usr/local/bin/synapse --daemon --config /etc/synapse/config.yaml')
+             | list | length > 0 }}
+
+- name: Stop and disable the earlier role's unit
+  ansible.builtin.systemd:
+    name: synapse
+    state: stopped
+    enabled: false
+  when: synapse_legacy_unit_is_ours | bool
+
+- name: Remove the earlier role's unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/synapse.service
+    state: absent
+  register: synapse_legacy_unit_removed
+  when: synapse_legacy_unit_is_ours | bool
+
+- name: Reload systemd after removing the unit
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: synapse_legacy_unit_is_ours | bool
+
+- name: Warn about a synapse.service this role did not write
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: /etc/systemd/system/synapse.service exists but its ExecStart is
+      not the one the earlier role wrote, so it was left in place. If it runs
+      /usr/local/bin/synapse, stop and remove it: it competes with the
+      {{ synapse_package }} unit.
+  when:
+    - synapse_legacy_unit.stat.exists
+    - not (synapse_legacy_unit_is_ours | bool)
+
+- name: Look for a stale binary from the earlier install
+  ansible.builtin.stat:
+    path: /usr/local/bin/synapse
+  register: synapse_legacy_binary
+
+- name: Warn about the stale binary
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: /usr/local/bin/synapse is left from an earlier install and is
+      not removed. The package installs /usr/bin/synapse; run that one, or
+      delete the old file.
+  when: synapse_legacy_binary.stat.exists

@@ -2,32 +2,19 @@
 - name: Refuse variables renamed or removed with the current config schema
   ansible.builtin.include_tasks: check_legacy_vars.yml
 
-- name: Detect architecture
-  ansible.builtin.set_fact:
-    synapse_arch: "{{ ansible_facts['architecture'] }}"
-  when: synapse_arch is not defined
+- name: Choose the package and check the inputs
+  ansible.builtin.include_tasks: select.yml
 
-- name: Map architecture names for DEB packages  # noqa: jinja[spacing]
-  ansible.builtin.set_fact:
-    synapse_arch_deb: >-
-      {%- if synapse_arch == 'x86_64' -%}
-      amd64
-      {%- elif synapse_arch == 'aarch64' or synapse_arch == 'arm64' -%}
-      arm64
-      {%- else -%}
-      {{ synapse_arch }}
-      {%- endif -%}
+- name: Remove what the earlier, pre-package role installed
+  ansible.builtin.include_tasks: legacy_cleanup.yml
 
-- name: Map architecture names for RPM and binary packages  # noqa: jinja[spacing]
-  ansible.builtin.set_fact:
-    synapse_arch_rpm: >-
-      {%- if synapse_arch == 'x86_64' -%}
-      x86_64
-      {%- elif synapse_arch == 'aarch64' or synapse_arch == 'arm64' -%}
-      aarch64
-      {%- else -%}
-      {{ synapse_arch }}
-      {%- endif -%}
+- name: Add the Gen0Sec package repository (apt)
+  ansible.builtin.include_tasks: repo_debian.yml
+  when: synapse_pkg_family == 'deb'
+
+- name: Add the Gen0Sec package repository (dnf)
+  ansible.builtin.include_tasks: repo_redhat.yml
+  when: synapse_pkg_family == 'rpm'
 
 - name: Install curl
   ansible.builtin.package:
@@ -253,11 +240,8 @@
     - clamav_enabled | bool
     - clamav_service_verify is defined or clamav_service_found is defined
 
-# Installation from the Gen0Sec package repositories is added in a follow-up
-
-- name: Reload systemd daemon after service installation
-  ansible.builtin.systemd:
-    daemon_reload: yes
+- name: Install the synapse package
+  ansible.builtin.include_tasks: install.yml
 
 - name: Create synapse directories
   ansible.builtin.file:
@@ -279,27 +263,15 @@
     mode: '0755'
   when: (synapse_config_mode | default('agent')) != 'agent'
 
-- name: Detect primary network interface if not explicitly set
-  ansible.builtin.set_fact:
-    synapse_config_network_iface: "{{ ansible_facts['default_ipv4']['interface'] | default('eth0') }}"
-  when: synapse_config_network_iface is not defined
+- name: Configure synapse
+  ansible.builtin.include_tasks: config.yml
 
-- name: Set platform API key from gen0sec_api_key if not explicitly set
-  ansible.builtin.set_fact:
-    synapse_config_platform_api_key: "{{ gen0sec_api_key }}"
-  when:
-    - gen0sec_api_key != ""
-    - synapse_config_platform_api_key is not defined
+# Restart now if the config changed, so the state below is the final one.
+- name: Apply pending restarts
+  ansible.builtin.meta: flush_handlers
 
-- name: Generate config.yaml from template
-  ansible.builtin.template:
-    src: config.yaml.j2
-    dest: /etc/synapse/config.yaml
-    mode: '0640'
-    backup: yes
-
-- name: Enable synapse service
+- name: Enable the synapse service and set its state
   ansible.builtin.systemd:
-    name: synapse
-    enabled: yes
-    daemon_reload: yes
+    name: "{{ synapse_package }}"
+    enabled: true
+    state: "{{ synapse_service_state }}"

@@ -3,10 +3,10 @@ SHELL := bash
 
 # Commands here are the ones .github/workflows/ci.yml runs.
 
-.PHONY: help install build test lint fmt clean
+.PHONY: help install build test test-install lint fmt clean
 
 help: ## List the targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
 
 F2B_DIR := .cache/fail2ban
 
@@ -31,6 +31,13 @@ test: ## Run the tests that need no synapse binary
 	ANSIBLE_GATHERING=explicit bash test/api_key_precedence.sh
 	GEN0SEC_FAIL2BAN_PYTHONPATH="$$(pwd)/$(F2B_DIR)/root/usr/lib/python3/dist-packages" bash test/fail2ban_render.sh
 	GEN0SEC_FAIL2BAN_PYTHONPATH="$$(pwd)/$(F2B_DIR)/root/usr/lib/python3/dist-packages" python3 test/fail2ban_action.py
+	bash test/package_selection.sh
+	bash test/no_secret_in_output.sh
+
+DISTRO ?= ubuntu
+MODE ?= agent
+test-install: ## Install in a systemd container (DISTRO=ubuntu|oracle MODE=agent|proxy); needs docker and GEN0SEC_REPO_KEY
+	bash test/install_in_container.sh $(DISTRO) $(MODE)
 
 lint: ## yamllint and ansible-lint
 	yamllint .

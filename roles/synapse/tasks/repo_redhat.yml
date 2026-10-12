@@ -1,0 +1,64 @@
+---
+# RHEL family: the signing key, then a .repo with the credential. Packages and
+# repository metadata are both signed, so both checks stay on.
+- name: Install gnupg and CA certificates
+  ansible.builtin.dnf:
+    name:
+      - gnupg2
+      - ca-certificates
+    state: present
+
+# The fingerprint is checked by the module before the key is imported.
+- name: Import the signing key
+  ansible.builtin.rpm_key:
+    key: "{{ synapse_keyserver_url }}/pks/lookup?op=get&search=0x{{ synapse_repo_key_fingerprint }}"
+    fingerprint: "{{ synapse_repo_key_fingerprint }}"
+    state: present
+
+# Create the file empty and root-only first, so the credential is never in a
+# file with looser permissions, even briefly.
+- name: Create the repository file with its final permissions
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ synapse_yum_reposdir }}/gen0sec.repo"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+
+# copy with force: false leaves an existing file's permissions alone, so a
+# world-readable file from an earlier run is tightened here, before it is
+# given the credential.
+- name: Make sure the repository file is root-only
+  ansible.builtin.file:
+    path: "{{ synapse_yum_reposdir }}/gen0sec.repo"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Define the Gen0Sec yum repository
+  ansible.builtin.yum_repository:
+    name: gen0sec
+    description: Gen0Sec
+    baseurl: "{{ synapse_rpm_url }}"
+    username: x
+    password: "{{ gen0sec_repo_key }}"
+    gpgcheck: true
+    repo_gpgcheck: true
+    gpgkey: "{{ synapse_keyserver_url }}/pks/lookup?op=get&search=0x{{ synapse_repo_key_fingerprint }}"
+    enabled: true
+    reposdir: "{{ synapse_yum_reposdir }}"
+    file: gen0sec
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+  tags: gen0sec_secrets
+
+# -y: dnf imports the repository key here, and without it the prompt fails a
+# non-interactive run.
+- name: Refresh the Gen0Sec repository metadata
+  ansible.builtin.command:
+    argv: [dnf, -y, makecache, --repo, gen0sec]
+  changed_when: false

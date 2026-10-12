@@ -1,0 +1,8 @@
+# Oracle Linux 9 with systemd as PID 1 and ansible-core from the distribution,
+# to run the playbook from inside it (connection: local).
+FROM oraclelinux:9
+ENV container=docker
+RUN dnf -y install systemd python3 sudo iproute ansible-core \
+ && dnf clean all
+STOPSIGNAL SIGRTMIN+3
+CMD ["/usr/sbin/init"]

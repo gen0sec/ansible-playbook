@@ -1,0 +1,74 @@
+---
+# Decide what to install, and refuse early, before anything on the host is
+# touched. Sets: synapse_mode, synapse_package, synapse_conflicting_packages,
+# synapse_pkg_family ("deb" or "rpm") and synapse_package_spec (the exact
+# argument for the package manager). Nothing here prints gen0sec_repo_key.
+- name: Refuse a host that is neither Debian-family nor RedHat-family
+  ansible.builtin.assert:
+    that: ansible_facts['os_family'] in ['Debian', 'RedHat']
+    fail_msg: >-
+      Only Debian-family and RedHat-family hosts are supported; this host
+      reports os_family {{ ansible_facts['os_family'] | default('unknown') }}.
+    quiet: true
+
+- name: Refuse RHEL-family hosts older than version 8
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution_major_version'] | int >= 8
+      - ansible_facts['pkg_mgr'] != 'yum'
+    fail_msg: >-
+      RHEL-family hosts need version 8 or newer with dnf. This host runs
+      {{ ansible_facts['distribution'] | default('a RedHat-family system') }}
+      {{ ansible_facts['distribution_major_version'] | default('?') }} with
+      {{ ansible_facts['pkg_mgr'] | default('an unknown package manager') }}.
+      EL7 and yum are not supported.
+    quiet: true
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: Require the Repository Access credential
+  ansible.builtin.assert:
+    that:
+      - gen0sec_repo_key | string | trim | length > 0
+      - gen0sec_repo_key | string is match('^\S+$')
+    fail_msg: >-
+      gen0sec_repo_key must be your Gen0Sec Repository Access credential, as
+      one token without whitespace. Create it in the dashboard under
+      Clients -> Repository Access, then set the GEN0SEC_REPO_KEY environment
+      variable on the control machine, or gen0sec_repo_key in an Ansible
+      Vault file.
+    quiet: true
+
+- name: Check the role variables
+  ansible.builtin.assert:
+    that:
+      - (synapse_config_mode | default('agent')) in ['agent', 'proxy']
+      - synapse_package_state in ['present', 'latest']
+      - synapse_service_state in ['started', 'stopped']
+      - (synapse_version | string) == '' or (synapse_version | string is match('^[0-9][0-9A-Za-z.+~]*$'))
+      - (synapse_version | string) == '' or synapse_package_state == 'present'
+    fail_msg: >-
+      Invalid role variables. synapse_config_mode must be agent or proxy;
+      synapse_package_state must be present or latest; synapse_service_state
+      must be started or stopped; synapse_version must be empty (what the
+      repository serves) or a version such as 0.9.0 or 0.9.0~rc.1, and a
+      synapse_version needs synapse_package_state: present (a version is a pin).
+    quiet: true
+
+- name: Choose the package
+  ansible.builtin.set_fact:
+    synapse_mode: "{{ synapse_config_mode | default('agent') }}"
+    synapse_pkg_family: "{{ 'deb' if ansible_facts['os_family'] == 'Debian' else 'rpm' }}"
+    synapse_package: "synapse-{{ synapse_config_mode | default('agent') }}{{ '-ml' if synapse_ml | bool else '' }}"
+
+# The four packages conflict with each other, so the other three are removed
+# before the chosen one is installed.
+- name: Work out the conflicting packages and the version spec
+  ansible.builtin.set_fact:
+    synapse_conflicting_packages: >-
+      {{ ['synapse-agent', 'synapse-agent-ml', 'synapse-proxy', 'synapse-proxy-ml'] | reject('equalto', synapse_package) | list }}
+    synapse_package_spec: >-
+      {{ synapse_package
+         if (synapse_version | string) == ''
+         else (synapse_package ~ '=' ~ synapse_version ~ '-1'
+               if synapse_pkg_family == 'deb'
+               else synapse_package ~ '-' ~ synapse_version ~ '-1') }}
