@@ -8,8 +8,10 @@ SHELL := bash
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
 
-install: ## Install the pinned ansible-core, ansible-lint and yamllint
+install: ## Install the pinned ansible-core, ansible-lint and yamllint, and Fail2Ban's Python package
 	python3 -m pip install -r requirements-dev.txt
+	python3 -c 'import sys; sys.path.insert(0, "/usr/lib/python3/dist-packages"); import fail2ban' 2>/dev/null \
+		|| sudo apt-get install -y fail2ban
 
 build: ## Syntax-check the playbook
 	ansible-playbook -i localhost, --syntax-check playbook.yml
@@ -18,6 +20,8 @@ test: ## Run the tests that need no synapse binary
 	shellcheck test/*.sh
 	bash test/render_and_check.sh
 	ANSIBLE_GATHERING=explicit bash test/api_key_precedence.sh
+	bash test/fail2ban_render.sh
+	python3 test/fail2ban_action.py
 
 lint: ## yamllint and ansible-lint
 	yamllint .

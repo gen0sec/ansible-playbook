@@ -1,58 +1,109 @@
 ---
+- name: Require the Gen0Sec API key
+  ansible.builtin.fail:
+    msg: >-
+      fail2ban_enabled is true but gen0sec_api_key is empty. Set gen0sec_api_key
+      (or the legacy g0s_api_key) for the Fail2Ban integration, or set
+      fail2ban_enabled to false.
+  when:
+    - fail2ban_enabled | bool
+    - gen0sec_api_key | default('') | length == 0
+
 - name: Install fail2ban
   ansible.builtin.package:
     name: fail2ban
     state: present
-  when: ansible_facts["os_family"] in ['Debian', 'RedHat']
+  when:
+    - fail2ban_manage_service | bool
+    - ansible_facts["os_family"] in ['Debian', 'RedHat']
 
-- name: Install jq (optional)
+- name: Install curl and jq
   ansible.builtin.package:
-    name: jq
+    name:
+      - curl
+      - jq
     state: present
+  when: fail2ban_manage_service | bool
 
-- name: Deploy Gen0Sec action file from template
-  ansible.builtin.template:
-    src: gen0sec.conf.j2
-    dest: /etc/fail2ban/action.d/gen0sec.conf
+- name: Install the Gen0Sec action file
+  ansible.builtin.copy:
+    src: gen0sec.conf
+    dest: "{{ fail2ban_config_dir }}/action.d/gen0sec.conf"
+    owner: "{{ fail2ban_file_owner }}"
+    group: "{{ fail2ban_file_group }}"
     mode: '0640'
-    owner: root
-    group: root
-  when: gen0sec_api_key != ""
+  notify: Restart fail2ban
+
+- name: Write the Gen0Sec API key header file
+  ansible.builtin.copy:
+    content: "Authorization: Bearer {{ gen0sec_api_key }}\n"
+    dest: "{{ fail2ban_config_dir }}/gen0sec.headers"
+    owner: "{{ fail2ban_file_owner }}"
+    group: "{{ fail2ban_file_group }}"
+    mode: '0600'
+  no_log: true
+  diff: false
+  when: gen0sec_api_key | default('') | length > 0
+  notify: Restart fail2ban
+
+- name: Write the Gen0Sec action overrides
+  ansible.builtin.copy:
+    content: |
+      [Init]
+      {% if gen0sec_expiration | string | length > 0 %}
+      expiration = {{ gen0sec_expiration }}
+      {% endif %}
+      {% if fail2ban_host | string | length > 0 %}
+      g0shost = {{ fail2ban_host }}
+      {% endif %}
+    dest: "{{ fail2ban_config_dir }}/action.d/gen0sec.local"
+    owner: "{{ fail2ban_file_owner }}"
+    group: "{{ fail2ban_file_group }}"
+    mode: '0644'
+  when: (gen0sec_expiration | string | length > 0) or (fail2ban_host | string | length > 0)
+  notify: Restart fail2ban
+
+- name: Remove the Gen0Sec action overrides when none is set
+  ansible.builtin.file:
+    path: "{{ fail2ban_config_dir }}/action.d/gen0sec.local"
+    state: absent
+  when:
+    - gen0sec_expiration | string | length == 0
+    - fail2ban_host | string | length == 0
+  notify: Restart fail2ban
 
 - name: Configure DEFAULT section in jail.local
   ansible.builtin.blockinfile:
-    path: /etc/fail2ban/jail.local
+    path: "{{ fail2ban_config_dir }}/jail.local"
     block: |
       [DEFAULT]
       banaction = gen0sec
       banaction_allports = gen0sec
       backend = {{ fail2ban_backend }}
     marker: "# {mark} ANSIBLE MANAGED BLOCK - DEFAULT"
-    create: yes
-    owner: root
-    group: root
+    create: true
+    owner: "{{ fail2ban_file_owner }}"
+    group: "{{ fail2ban_file_group }}"
     mode: '0644'
+  notify: Restart fail2ban
 
 - name: Configure sshd jail
   ansible.builtin.blockinfile:
-    path: /etc/fail2ban/jail.local
+    path: "{{ fail2ban_config_dir }}/jail.local"
     block: |
       [sshd]
       enabled = {{ 'true' if fail2ban_jail_enabled else 'false' }}
     marker: "# {mark} ANSIBLE MANAGED BLOCK - SSHD"
-    create: yes
-    owner: root
-    group: root
+    create: true
+    owner: "{{ fail2ban_file_owner }}"
+    group: "{{ fail2ban_file_group }}"
     mode: '0644'
+  notify: Restart fail2ban
 
 - name: Ensure fail2ban service is enabled and started
   ansible.builtin.systemd:
     name: fail2ban
-    enabled: yes
+    enabled: true
     state: started
-    daemon_reload: yes
-
-- name: Restart fail2ban to apply configuration
-  ansible.builtin.systemd:
-    name: fail2ban
-    state: restarted
+    daemon_reload: true
+  when: fail2ban_manage_service | bool
