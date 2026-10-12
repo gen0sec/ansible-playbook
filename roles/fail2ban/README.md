@@ -6,7 +6,7 @@ This role configures Fail2Ban to report bans to the Gen0Sec Signal API (v2).
 
 - `fail2ban_enabled`: Enable Fail2Ban integration (default: `false`). When `false` the role does nothing. When `true`, `gen0sec_api_key` must be set, or the run fails.
 - `gen0sec_api_key`: Gen0Sec API key (used for both synapse and fail2ban). `g0s_api_key` is accepted as a legacy alias.
-- `gen0sec_expiration`: Block expiration time in seconds, a non-negative whole number without leading zeros (default: empty, which uses the jail's `bantime`). An empty or null value counts as unset.
+- `gen0sec_expiration`: Block expiration time in seconds, a whole number from 60 to 315360000 (10 years), without leading zeros (default: empty, which uses the jail's `bantime`). An empty or null value counts as unset; anything else outside the range fails the run. Unquoted in YAML, a leading zero makes the number octal (`0600` is read as 384), so write `600`.
 - `fail2ban_host`: This host's part of the rule name (default: empty, which uses the short hostname; an empty or null value counts as unset)
 - `fail2ban_jail_enabled`: Enable fail2ban jails (default: `true`)
 - `fail2ban_backend`: Fail2Ban backend (default: `systemd`)
