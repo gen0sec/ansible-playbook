@@ -82,7 +82,10 @@ docker exec "$name" rm -rf /work/.git /work/graphify-out
 # A fresh image has an empty package-list directory that is only seconds old, so
 # apt's cache_valid_time judges it current while no package can be found. How
 # old the directory looks depends on the image store, so make it so here.
-[ "$family" = deb ] && docker exec "$name" bash -c 'rm -rf /var/lib/apt/lists/* && touch /var/lib/apt/lists'
+if [ "$family" = deb ]; then
+  docker exec "$name" bash -c 'rm -rf /var/lib/apt/lists/* && touch /var/lib/apt/lists' \
+    || die "could not empty the apt package lists"
+fi
 
 step "phase 1: pre-seed an old unit and a world-readable credential file"
 docker exec "$name" bash -c '
