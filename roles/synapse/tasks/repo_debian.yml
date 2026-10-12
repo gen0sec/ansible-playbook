@@ -22,14 +22,26 @@
   register: synapse_apt_credential
   tags: gen0sec_secrets
 
+# cache_valid_time trusts the age of /var/lib/apt/lists, not its content: an
+# emptied directory that is recent (a fresh container or a minimal cloud image)
+# counts as a valid cache, the update is skipped and gnupg is not found. So
+# nothing is updated when both packages are there already, and the update is
+# forced when either is missing.
+- name: Check whether gnupg and CA certificates are installed
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, -f, '${Status}\n', gnupg, ca-certificates]
+  register: synapse_apt_prereq
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
 - name: Install gnupg and CA certificates
   ansible.builtin.apt:
     name:
       - gnupg
       - ca-certificates
     state: present
-    update_cache: true
-    cache_valid_time: 3600
+    update_cache: "{{ not (synapse_apt_prereq.stdout_lines == ['install ok installed', 'install ok installed']) }}"
 
 # The installed keyring must be exactly the pinned key (see verify_key.yml);
 # anything else is replaced.
