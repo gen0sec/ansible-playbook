@@ -126,12 +126,18 @@ run_play nullexp "{$base,\"gen0sec_api_key\":\"$KEY\",\"gen0sec_expiration\":nul
   || fail "gen0sec.local with a null expiration is not just the host"
 
 # --- a bad expiration fails, naming the variable
-for bad in '-5' '"abc"' '"1.5"'; do
+for bad in '-5' '"abc"' '"1.5"' '"0600"' '"00"'; do
   run_play badexp "{$base,\"gen0sec_api_key\":\"$KEY\",\"gen0sec_expiration\":$bad}"
   [ "$rc" -ne 0 ] || fail "expiration $bad did not fail the run"
   /usr/bin/grep -q 'gen0sec_expiration' "$OUT/badexp.log" || fail "the failure for expiration $bad does not name gen0sec_expiration"
   [ ! -e "$OUT/badexp/etc/action.d/gen0sec.local" ] || fail "gen0sec.local written for expiration $bad"
 done
+
+# --- zero is a valid expiration (the API reads it as its default)
+run_play zeroexp "{$base,\"gen0sec_api_key\":\"$KEY\",\"gen0sec_expiration\":0}"
+[ "$rc" -eq 0 ] || fail "expiration 0 failed the run"
+[ "$(cat "$OUT/zeroexp/etc/action.d/gen0sec.local" 2>/dev/null)" = $'[Init]\nexpiration = 0' ] \
+  || fail "gen0sec.local for expiration 0 is not just the expiration"
 
 # --- disabled: a no-op, even with an empty key
 run_play disabled "$(printf '%s' "{$base,\"gen0sec_api_key\":\"\"}" | sed 's/"fail2ban_enabled":true/"fail2ban_enabled":false/')"
