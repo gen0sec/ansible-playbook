@@ -10,14 +10,21 @@
     fail2ban_expiration_value: "{{ '' if gen0sec_expiration is none else (gen0sec_expiration | string | trim) }}"
     fail2ban_host_value: "{{ '' if fail2ban_host is none else (fail2ban_host | string | trim) }}"
 
-- name: Require a non-negative whole number of seconds for gen0sec_expiration
+- name: Require gen0sec_expiration to be between 60 seconds and 10 years
+  # The API raises anything under 60 to 60 and reads 0 as one day; above ten
+  # years the number gets close to what it can represent. Unset is the way to
+  # follow the jail's bantime.
   ansible.builtin.fail:
     msg: >-
-      gen0sec_expiration must be a non-negative whole number of seconds without
-      leading zeros, or unset to use the jail's bantime.
+      gen0sec_expiration must be a whole number of seconds from 60 to
+      315360000 (10 years), written without leading zeros, or unset to use
+      the jail's bantime.
   when:
     - fail2ban_expiration_value | length > 0
-    - fail2ban_expiration_value is not match('^(0|[1-9][0-9]*)$')
+    - >-
+      fail2ban_expiration_value is not match('^[1-9][0-9]*$')
+      or (fail2ban_expiration_value | int) < 60
+      or (fail2ban_expiration_value | int) > 315360000
 
 - name: Require the Gen0Sec API key
   ansible.builtin.fail:

@@ -15,7 +15,7 @@ redis_enabled: true   # Set to false to disable Redis installation
 
 # Fail2Ban integration (optional)
 fail2ban_enabled: false  # Set to true to enable Fail2Ban integration
-# gen0sec_expiration: 600  # Block expiration in seconds; unset uses the jail's bantime
+# gen0sec_expiration: 600  # Block expiration in seconds, 60 to 315360000; unset uses the jail's bantime
 fail2ban_jail_enabled: true
 fail2ban_backend: systemd  # Use 'auto' for automatic detection
 
