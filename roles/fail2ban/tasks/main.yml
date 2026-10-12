@@ -1,13 +1,31 @@
 ---
+- name: Do nothing unless the Fail2Ban integration is enabled
+  ansible.builtin.meta: end_role
+  when: not (fail2ban_enabled | bool)
+
+- name: Normalise the optional overrides
+  # A null (gen0sec_expiration: with no value) renders as an empty string in a
+  # template and as "None" through | string; both become '' here.
+  ansible.builtin.set_fact:
+    fail2ban_expiration_value: "{{ '' if gen0sec_expiration is none else (gen0sec_expiration | string | trim) }}"
+    fail2ban_host_value: "{{ '' if fail2ban_host is none else (fail2ban_host | string | trim) }}"
+
+- name: Require a non-negative whole number of seconds for gen0sec_expiration
+  ansible.builtin.fail:
+    msg: >-
+      gen0sec_expiration must be a non-negative whole number of seconds, or
+      unset to use the jail's bantime.
+  when:
+    - fail2ban_expiration_value | length > 0
+    - fail2ban_expiration_value is not match('^[0-9]+$')
+
 - name: Require the Gen0Sec API key
   ansible.builtin.fail:
     msg: >-
       fail2ban_enabled is true but gen0sec_api_key is empty. Set gen0sec_api_key
       (or the legacy g0s_api_key) for the Fail2Ban integration, or set
       fail2ban_enabled to false.
-  when:
-    - fail2ban_enabled | bool
-    - gen0sec_api_key | default('') | length == 0
+  when: gen0sec_api_key | default('') | length == 0
 
 - name: Install fail2ban
   ansible.builtin.package:
@@ -50,17 +68,17 @@
   ansible.builtin.copy:
     content: |
       [Init]
-      {% if gen0sec_expiration | string | length > 0 %}
-      expiration = {{ gen0sec_expiration }}
+      {% if fail2ban_expiration_value | length > 0 %}
+      expiration = {{ fail2ban_expiration_value }}
       {% endif %}
-      {% if fail2ban_host | string | length > 0 %}
-      g0shost = {{ fail2ban_host }}
+      {% if fail2ban_host_value | length > 0 %}
+      g0shost = {{ fail2ban_host_value }}
       {% endif %}
     dest: "{{ fail2ban_config_dir }}/action.d/gen0sec.local"
     owner: "{{ fail2ban_file_owner }}"
     group: "{{ fail2ban_file_group }}"
     mode: '0644'
-  when: (gen0sec_expiration | string | length > 0) or (fail2ban_host | string | length > 0)
+  when: (fail2ban_expiration_value | length > 0) or (fail2ban_host_value | length > 0)
   notify: Restart fail2ban
 
 - name: Remove the Gen0Sec action overrides when none is set
@@ -68,8 +86,8 @@
     path: "{{ fail2ban_config_dir }}/action.d/gen0sec.local"
     state: absent
   when:
-    - gen0sec_expiration | string | length == 0
-    - fail2ban_host | string | length == 0
+    - fail2ban_expiration_value | length == 0
+    - fail2ban_host_value | length == 0
   notify: Restart fail2ban
 
 - name: Configure DEFAULT section in jail.local

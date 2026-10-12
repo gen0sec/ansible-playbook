@@ -113,6 +113,51 @@ run_play nokey "{$base,\"gen0sec_api_key\":\"\"}"
 /usr/bin/grep -q 'gen0sec_api_key' "$OUT/nokey.log" || fail "the failure does not name gen0sec_api_key"
 [ ! -e "$OUT/nokey/etc/gen0sec.headers" ] || fail "a header file was written for an empty key"
 
+# --- null overrides are the same as unset: no .local, no empty key
+run_play nulls "{$base,\"gen0sec_api_key\":\"$KEY\",\"gen0sec_expiration\":null,\"fail2ban_host\":null}"
+[ "$rc" -eq 0 ] || { fail "null overrides run exited $rc"; cat "$OUT/nulls.log" >&2; }
+[ ! -e "$OUT/nulls/etc/action.d/gen0sec.local" ] || fail "gen0sec.local exists for null overrides"
+# one null, one set: only the set key is written
+run_play nullhost "{$base,\"gen0sec_api_key\":\"$KEY\",\"gen0sec_expiration\":120,\"fail2ban_host\":null}"
+[ "$(cat "$OUT/nullhost/etc/action.d/gen0sec.local" 2>/dev/null)" = $'[Init]\nexpiration = 120' ] \
+  || fail "gen0sec.local with a null host is not just the expiration"
+run_play nullexp "{$base,\"gen0sec_api_key\":\"$KEY\",\"gen0sec_expiration\":null,\"fail2ban_host\":\"web-2\"}"
+[ "$(cat "$OUT/nullexp/etc/action.d/gen0sec.local" 2>/dev/null)" = $'[Init]\ng0shost = web-2' ] \
+  || fail "gen0sec.local with a null expiration is not just the host"
+
+# --- a bad expiration fails, naming the variable
+for bad in '-5' '"abc"' '"1.5"'; do
+  run_play badexp "{$base,\"gen0sec_api_key\":\"$KEY\",\"gen0sec_expiration\":$bad}"
+  [ "$rc" -ne 0 ] || fail "expiration $bad did not fail the run"
+  /usr/bin/grep -q 'gen0sec_expiration' "$OUT/badexp.log" || fail "the failure for expiration $bad does not name gen0sec_expiration"
+  [ ! -e "$OUT/badexp/etc/action.d/gen0sec.local" ] || fail "gen0sec.local written for expiration $bad"
+done
+
+# --- disabled: a no-op, even with an empty key
+run_play disabled "$(printf '%s' "{$base,\"gen0sec_api_key\":\"\"}" | sed 's/"fail2ban_enabled":true/"fail2ban_enabled":false/')"
+[ "$rc" -eq 0 ] || { fail "disabled run exited $rc"; cat "$OUT/disabled.log" >&2; }
+if [ -n "$(find "$OUT/disabled/etc" -type f)" ]; then
+  fail "the role wrote files while fail2ban_enabled is false: $(find "$OUT/disabled/etc" -type f | tr '\n' ' ')"
+fi
+
+# --- the role-written .local, read through Fail2Ban itself
+if python3 -c 'import sys; sys.path[:0] = ["/usr/lib/python3/dist-packages", __import__("os").environ.get("GEN0SEC_FAIL2BAN_PYTHONPATH", "")]; import fail2ban' 2>/dev/null; then
+  python3 "$ROOT/test/fail2ban_action.py" --local "$OUT/nullexp/etc/action.d/gen0sec.local" --host web-2 \
+    > "$OUT/local1.log" 2>&1 || { fail "ActionReader did not read the host-only .local as expected"; cat "$OUT/local1.log" >&2; }
+  python3 "$ROOT/test/fail2ban_action.py" --local "$OUT/nullhost/etc/action.d/gen0sec.local" --expires 120 \
+    > "$OUT/local2.log" 2>&1 || { fail "ActionReader did not read the expiration-only .local as expected"; cat "$OUT/local2.log" >&2; }
+else
+  echo "SKIP: fail2ban Python package not found; the .local is not read through ActionReader (make install fetches it)"
+fi
+
+# --- the header task must carry no_log and diff: false (each one alone is enough
+# to keep the key out of the output on its own, so check both)
+tasks="${F2B_TASKS:-$ROOT/roles/fail2ban/tasks/main.yml}"
+block="$(awk '/^- name:/ { on = ($0 ~ /API key header file/) } on' "$tasks")"
+[ -n "$block" ] || fail "the header file task was not found in $tasks"
+printf '%s\n' "$block" | /usr/bin/grep -q '^  no_log: true$' || fail "the header file task lacks no_log: true"
+printf '%s\n' "$block" | /usr/bin/grep -q '^  diff: false$' || fail "the header file task lacks diff: false"
+
 # --- defaults: root-owned, 0600 header, service managed
 /usr/bin/grep -q '^fail2ban_file_owner: root$' "$ROOT/roles/fail2ban/defaults/main.yml" || fail "default owner is not root"
 /usr/bin/grep -q '^fail2ban_file_group: root$' "$ROOT/roles/fail2ban/defaults/main.yml" || fail "default group is not root"

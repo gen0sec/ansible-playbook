@@ -8,10 +8,19 @@ SHELL := bash
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
 
-install: ## Install the pinned ansible-core, ansible-lint and yamllint, and Fail2Ban's Python package
+F2B_DIR := .cache/fail2ban
+
+install: ## Install the pinned ansible tools, and unpack Fail2Ban's Python package for the action test
 	python3 -m pip install -r requirements-dev.txt
-	python3 -c 'import sys; sys.path.insert(0, "/usr/lib/python3/dist-packages"); import fail2ban' 2>/dev/null \
-		|| sudo apt-get install -y fail2ban
+	@if python3 -c 'import sys; sys.path.insert(0, "/usr/lib/python3/dist-packages"); import fail2ban' 2>/dev/null; then \
+		echo "fail2ban Python package found"; \
+	elif command -v apt-get >/dev/null 2>&1 && command -v dpkg-deb >/dev/null 2>&1; then \
+		rm -rf $(F2B_DIR) && mkdir -p $(F2B_DIR) && cd $(F2B_DIR) \
+		&& apt-get download fail2ban && dpkg-deb -x fail2ban_*.deb root \
+		&& echo "fail2ban unpacked into $(F2B_DIR)/root (no service installed)"; \
+	else \
+		echo "NOTE: no apt-get/dpkg-deb here; test/fail2ban_action.py needs the fail2ban Python package (set GEN0SEC_FAIL2BAN_PYTHONPATH to its dist-packages)"; \
+	fi
 
 build: ## Syntax-check the playbook
 	ansible-playbook -i localhost, --syntax-check playbook.yml
@@ -20,8 +29,8 @@ test: ## Run the tests that need no synapse binary
 	shellcheck test/*.sh
 	bash test/render_and_check.sh
 	ANSIBLE_GATHERING=explicit bash test/api_key_precedence.sh
-	bash test/fail2ban_render.sh
-	python3 test/fail2ban_action.py
+	GEN0SEC_FAIL2BAN_PYTHONPATH="$$(pwd)/$(F2B_DIR)/root/usr/lib/python3/dist-packages" bash test/fail2ban_render.sh
+	GEN0SEC_FAIL2BAN_PYTHONPATH="$$(pwd)/$(F2B_DIR)/root/usr/lib/python3/dist-packages" python3 test/fail2ban_action.py
 
 lint: ## yamllint and ansible-lint
 	yamllint .

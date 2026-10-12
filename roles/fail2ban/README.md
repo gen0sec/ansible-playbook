@@ -4,10 +4,10 @@ This role configures Fail2Ban to report bans to the Gen0Sec Signal API (v2).
 
 ## Role Variables
 
-- `fail2ban_enabled`: Enable Fail2Ban integration (default: `false`). When `true`, `gen0sec_api_key` must be set, or the run fails.
+- `fail2ban_enabled`: Enable Fail2Ban integration (default: `false`). When `false` the role does nothing. When `true`, `gen0sec_api_key` must be set, or the run fails.
 - `gen0sec_api_key`: Gen0Sec API key (used for both synapse and fail2ban). `g0s_api_key` is accepted as a legacy alias.
-- `gen0sec_expiration`: Block expiration time in seconds (default: empty, which uses the jail's `bantime`)
-- `fail2ban_host`: This host's part of the rule name (default: empty, which uses the short hostname)
+- `gen0sec_expiration`: Block expiration time in seconds, a non-negative whole number (default: empty, which uses the jail's `bantime`). An empty or null value counts as unset.
+- `fail2ban_host`: This host's part of the rule name (default: empty, which uses the short hostname; an empty or null value counts as unset)
 - `fail2ban_jail_enabled`: Enable fail2ban jails (default: `true`)
 - `fail2ban_backend`: Fail2Ban backend (default: `systemd`)
 - `fail2ban_manage_service`: Install the packages and manage the service (default: `true`). Used by `test/fail2ban_render.sh`.
@@ -27,6 +27,11 @@ The header file task runs with `no_log` and without a diff, so the key does not 
 ## Upgrading from the earlier role
 
 The earlier role templated the key into `gen0sec.conf`. The key now lives only in the header file, and a role run replaces the old `gen0sec.conf`. The default expiration changed from 600 seconds to the jail's `bantime`; set `gen0sec_expiration` to keep 600.
+
+**Rotate the API key on upgraded hosts.** The earlier action put `Authorization: Bearer <key>` on the command line, and Fail2Ban logs the full command when an action fails. A host that ran the earlier action may therefore hold the key in `/var/log/fail2ban.log` (and rotated copies) or in the journal (`journalctl -u fail2ban`). After upgrading:
+
+1. Create a new API key with the `signal:write` permission and revoke the old one.
+2. Purge the old key from those logs: delete or rewrite `/var/log/fail2ban.log*` and vacuum the journal entries for the fail2ban unit, and from any log shipper that collected them.
 
 ## Usage
 

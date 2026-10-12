@@ -3,3 +3,4 @@
 ansible.cfg.local
 all.yml
 hosts
+.cache/
