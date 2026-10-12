@@ -13,11 +13,11 @@
 - name: Require a non-negative whole number of seconds for gen0sec_expiration
   ansible.builtin.fail:
     msg: >-
-      gen0sec_expiration must be a non-negative whole number of seconds, or
-      unset to use the jail's bantime.
+      gen0sec_expiration must be a non-negative whole number of seconds without
+      leading zeros, or unset to use the jail's bantime.
   when:
     - fail2ban_expiration_value | length > 0
-    - fail2ban_expiration_value is not match('^[0-9]+$')
+    - fail2ban_expiration_value is not match('^(0|[1-9][0-9]*)$')
 
 - name: Require the Gen0Sec API key
   ansible.builtin.fail:
