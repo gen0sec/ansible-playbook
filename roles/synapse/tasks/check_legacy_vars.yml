@@ -1,0 +1,28 @@
+---
+# The config loader used to accept arxignis:/pingora: as aliases, so inventories
+# that set these variables worked. The template now writes platform:/proxy: and
+# no longer has these settings, so they would be dropped silently (for example
+# a telemetry opt-out would turn back on). Fail instead.
+- name: Collect pre-rename synapse_config_* variables
+  ansible.builtin.set_fact:
+    synapse_legacy_vars: >-
+      {{ query('varnames', '^synapse_config_(arxignis_|pingora_|bpf_stats_|tcp_fingerprint_|network_disable_xdp$|daemon_stdout$|daemon_stderr$)') }}
+
+- name: Fail on pre-rename synapse_config_* variables
+  ansible.builtin.fail:
+    msg: |
+      These variables were renamed or removed with the current config schema: {{ synapse_legacy_vars | join(', ') }}
+      Renames:
+        synapse_config_arxignis_log_sending_enabled -> synapse_config_platform_telemetry_sending_enabled
+        synapse_config_arxignis_captcha_*           -> synapse_config_captcha_*
+        synapse_config_arxignis_*                   -> synapse_config_platform_*
+        synapse_config_pingora_upstreams_conf       -> synapse_config_proxy_upstream_conf
+        synapse_config_pingora_healthcheck_*        -> synapse_config_proxy_upstream_healthcheck_*
+        synapse_config_pingora_proxy_protocol_*     -> synapse_config_proxy_protocol_*
+        synapse_config_pingora_proxy_<x>            -> synapse_config_proxy_<x> (address_http, address_tls, certificates, tls_grade)
+        synapse_config_pingora_default_certificate  -> synapse_config_proxy_default_certificate
+      Removed (the loader ignores them): synapse_config_pingora_{config_address,config_api_enabled,master_key,log_level},
+        synapse_config_network_disable_xdp, synapse_config_daemon_{stdout,stderr}.
+      synapse_config_bpf_stats_* and synapse_config_tcp_fingerprint_* are replaced by
+        synapse_config_logging_fingerprint_log_enabled / synapse_config_logging_fingerprint_log_file.
+  when: synapse_legacy_vars | length > 0

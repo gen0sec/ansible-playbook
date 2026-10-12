@@ -1,0 +1,7 @@
+---
+# Default variables for fail2ban role
+fail2ban_enabled: false
+gen0sec_api_key: "{{ g0s_api_key | default('') }}"  # g0s_api_key is the legacy alias  # noqa: var-naming[no-role-prefix]
+gen0sec_expiration: 600  # noqa: var-naming[no-role-prefix]
+fail2ban_jail_enabled: true
+fail2ban_backend: systemd

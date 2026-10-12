@@ -1,0 +1,9 @@
+---
+profile: production
+exclude_paths:
+  - .git/
+  - .github/
+  - .ansible/
+  - .cache/
+# Findings that predate the import carry an inline `# noqa: <rule>`, so CI
+# blocks only new ones. They are removed in follow-ups.
