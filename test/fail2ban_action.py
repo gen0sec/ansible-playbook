@@ -3,10 +3,20 @@ against a local mock of the Signal API, and checks each exits 0 only on 200.
 
 Needs Fail2Ban's Python package (the fail2ban package on Debian and Ubuntu).
 Usage, from the repository root:  python3 test/fail2ban_action.py
+  python3 test/fail2ban_action.py --local FILE --expires N --host H
+reads the role-written gen0sec.local FILE through Fail2Ban's ActionReader and
+checks the ban command it renders sends expires_in N (omit --expires for the
+jail's bantime, 600 here) and a rule_ref with host H (omit --host for the
+short hostname).
+
+GEN0SEC_FAIL2BAN_PYTHONPATH, if set, is searched first for the fail2ban package
+(make install unpacks one there when the system has none).
 """
-import json, subprocess, sys, threading, shutil
+import json, os, subprocess, sys, threading, shutil
 from http.server import BaseHTTPRequestHandler, HTTPServer
 sys.path.insert(0, '/usr/lib/python3/dist-packages')
+if os.environ.get("GEN0SEC_FAIL2BAN_PYTHONPATH"):
+    sys.path.insert(0, os.environ["GEN0SEC_FAIL2BAN_PYTHONPATH"])
 from fail2ban.client.actionreader import ActionReader
 from fail2ban.server.action import CommandAction
 from fail2ban.server.ipdns import IPAddr
@@ -16,6 +26,12 @@ here = os.path.dirname(os.path.abspath(__file__))
 basedir = tempfile.mkdtemp()
 os.makedirs(f"{basedir}/action.d")
 shutil.copy(os.path.join(here, "..", "roles", "fail2ban", "files", "gen0sec.conf"), f"{basedir}/action.d/gen0sec.conf")
+args = sys.argv[1:]
+def opt(name):
+    return args[args.index(name) + 1] if name in args else None
+local_file = opt("--local")
+if local_file:
+    shutil.copy(local_file, f"{basedir}/action.d/gen0sec.local")
 reply = {"code": 200}; seen = []
 
 class H(BaseHTTPRequestHandler):
@@ -51,6 +67,20 @@ fails = 0
 def check(name, ok):
     global fails
     print(("ok   " if ok else "FAIL ") + name); fails += 0 if ok else 1
+
+if local_file:
+    import socket
+    reply["code"] = 200
+    c = render("actionban")
+    check("actionban is defined", c is not None)
+    subprocess.run(["/bin/sh", "-c", c], capture_output=True)
+    sent = seen[0][2][0] if seen else {}
+    want_exp = int(opt("--expires") or 600)
+    want_host = opt("--host") or socket.gethostname().split(".")[0]
+    check(f"gen0sec.local gives expires_in {want_exp} (got {sent.get('expires_in')})", sent.get("expires_in") == want_exp)
+    want_ref = f"fail2ban-{want_host}-sshd-203.0.113.7"
+    check(f"gen0sec.local gives rule_ref {want_ref} (got {sent.get('rule_ref')})", sent.get("rule_ref") == want_ref)
+    sys.exit(1 if fails else 0)
 
 for cmd in ("actionban", "actionunban", "actionprolong"):
     c = render(cmd)
