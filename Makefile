@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := bash
 
-# Commands here are the ones .github/workflows/ci.yml runs.
+# Commands here are the ones .github/workflows/ci.yml and install.yml run.
 
 .PHONY: help install build test test-install test-variant test-old-core lint fmt clean
 

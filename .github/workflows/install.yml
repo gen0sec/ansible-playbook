@@ -1,0 +1,82 @@
+name: Install
+
+# Installs Synapse from the Gen0Sec package repositories in systemd
+# containers (make test-install). It needs the GEN0SEC_REPO_KEY secret, a
+# Repository Access credential with apt:pull and rpm:pull. Pull requests from
+# forks get no secrets: there the install is skipped with a warning, never
+# reported as passed.
+#
+# The weekly run installs whatever the repositories serve now, so a new
+# package that breaks the playbook shows up without a change here.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  credential:
+    name: Credential
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 5
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - name: Check for GEN0SEC_REPO_KEY
+        id: check
+        env:
+          GEN0SEC_REPO_KEY: ${{ secrets.GEN0SEC_REPO_KEY }}
+        run: |
+          if [ -n "${GEN0SEC_REPO_KEY:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  install:
+    name: Install (${{ matrix.distro }}, ${{ matrix.mode }})
+    needs: credential
+    if: needs.credential.outputs.present == 'true'
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ubuntu, oracle]
+        # agent also switches to proxy afterwards (phase 4), so it covers both
+        # packages and the swap between them.
+        mode: [agent]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install in a systemd container
+        env:
+          GEN0SEC_REPO_KEY: ${{ secrets.GEN0SEC_REPO_KEY }}
+        run: make test-install DISTRO=${{ matrix.distro }} MODE=${{ matrix.mode }}
+
+  install-skipped:
+    name: Install (skipped, no credential)
+    needs: credential
+    if: needs.credential.outputs.present != 'true'
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 5
+    steps:
+      - name: Report the skipped install
+        run: |
+          msg="GEN0SEC_REPO_KEY is not available to this run (a fork, or the secret is not set), so the package install was NOT tested."
+          echo "::warning::$msg"
+          echo "**Install skipped:** $msg" >> "$GITHUB_STEP_SUMMARY"
