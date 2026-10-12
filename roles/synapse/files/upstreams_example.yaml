@@ -1,0 +1,244 @@
+# Synapse upstreams configuration — v2 schema.
+#
+# v2 makes host modes (terminate-static / terminate-acme / passthrough)
+# explicit and exclusive, with layered headers/timeouts (global → host →
+# route) and a single-upstream sugar for the common case.
+#
+# v1 files (no `version:` field, or `version: 1`) still work — synapse
+# auto-detects and lowers them into the same in-memory shape. Drop the
+# v1 syntax once everything has migrated.
+version: 2  # noqa: yaml[document-start]
+
+proxy:
+  # Forward JA4+ fingerprints to upstream (G0S-JA4, G0S-JA4T, G0S-JA4H,
+  # G0S-JA4S, G0S-JA4L, G0S-JA4X, ...). Default: true.
+  #
+  # `header_names` picks the header names: `g0s` (default, the reserved
+  # G0S-* namespace), `legacy` (the previous X-JA4* names) or `both`.
+  # Client-sent G0S-* / X-JA4* / X-Client-Tls-Ja4/Ja3 headers are removed
+  # unless the peer is listed in `proxy.trusted_proxies` in config.yaml.
+  fingerprints:
+    forward: true
+    header_names: g0s
+
+  # Sticky sessions (consistent-hash by client IP across reconnects).
+  # Default: disabled. The `key` field is reserved for future
+  # per-cookie / per-header stickiness.
+  sticky_sessions:
+    enabled: false
+
+# Global default timeouts (seconds, or use suffix: 30s / 5m).
+# Per-host and per-route blocks override these. Defaults match v1
+# behaviour: connect=30, read=120, write=30, idle=60.
+# timeouts:
+#   connect: 30
+#   read: 120
+#   write: 30
+#   idle: 60
+
+# Global default headers. Host- and route-level `headers` extend these;
+# when the same header is set at several levels, the most specific wins
+# (route over host over global). Request headers are only sent upstream and
+# response headers only to the client.
+headers:
+  response:
+    - "Access-Control-Allow-Origin: *"
+    - "Access-Control-Allow-Methods: POST, GET, OPTIONS"
+    - "Access-Control-Max-Age: 86400"
+    - "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"
+  # request:
+  #   - "X-Forwarded-Proto: https"
+
+# Send the resolved request path upstream (escapes decoded where that cannot
+# change meaning, `.`/`..` removed, repeated slashes collapsed) instead of the
+# client's spelling. Routing and WAF rules read the resolved path either way.
+# Also allowed per host and per route; most specific wins.
+# normalize_path: true
+
+# Largest request target (path + query, in bytes) and most header lines this
+# proxy serves; over them is 414 / 431. Also allowed per host and per route,
+# most specific wins, each knob independently. Unset = no limit. Pingora's
+# fixed caps (256 headers, 1 MiB) still apply underneath.
+# max_url_length: 8192
+# max_header_count: 100
+
+# Methods this proxy serves. Also allowed per host and per route, where the
+# most specific list wins; anything else is answered 405 with an `Allow:`
+# header. Unset = every method. `HEAD` rides along with `GET`. Include
+# OPTIONS if an origin answers CORS preflight.
+# methods: [GET, HEAD, POST, OPTIONS]
+
+# Header transforms: remove, set, or add headers, optionally conditional and
+# with values computed by wirefilter expressions (same language as WAF
+# rules). Also allowed per host and per route; see docs/CONFIGURATION.md.
+# transforms:
+#   request_headers:
+#     - remove: ["X-Debug", "X-Internal-*"]
+#   response_headers:
+#     - remove: ["Server", "X-Powered-By"]
+#     - when: 'http.response.status in {301 302 307 308}'
+#       set_expr:
+#         Location: 'regex_replace(http.response.headers["location"][0], "^http://", "https://")'
+
+# Synapse-served internal endpoints (captcha verify, ACME challenge,
+# health). Apply across all terminated hosts. Uncomment and adjust if
+# you run the captcha or ACME services on a non-default port.
+#
+# internal:
+#   - path: /cgi-bin/captcha/verify
+#     upstream: 127.0.0.1:9180
+#   - path: /.well-known/acme-challenge/*
+#     upstream: 127.0.0.1:9180
+#   - path: /health
+#     upstream: 127.0.0.1:9180
+#     access_log: false
+
+# The host that serves every name no entry under `hosts:` matches. Without
+# it such a request is answered 404. It is a terminating host (paths,
+# headers, timeouts, transforms), tried after exact names and wildcards. It
+# takes no `tls:` block: a client asking for a name no host has is shown
+# `proxy.default_certificate` from config.yaml. A bare "*" under `hosts:` is
+# refused, so a catch-all only exists when this block does.
+#
+# default_host:
+#   paths:
+#     "/":
+#       upstream: 10.0.0.10:8080
+#       # Never probe this route's servers. Leaving `health_check` out
+#       # means probed with the global settings, not unprobed.
+#       health_check:
+#         type: none
+
+hosts:
+  # ── Example: terminate TLS with ACME (dns-01, wildcard) ──
+  example.com:
+    tls:
+      terminate:
+        acme:
+          challenge_type: dns-01
+          email: admin@example.com
+          wildcard: true
+    paths:
+      "/":
+        # Single upstream (sugar). Equivalent to:
+        #   upstreams:
+        #     - addr: backend.example.com:443
+        #       weight: 1
+        upstream: backend.example.com:443
+        force_https: true
+        # Per-route headers extend the global default set.
+        headers:
+          request:
+            - "Host: backend.example.com"
+        # response:
+        #   - "X-Custom-Header: value"
+
+  # ── Example: terminate TLS with a static cert ──
+  # static.example.com:
+  #   tls:
+  #     terminate:
+  #       cert: /etc/synapse/static.crt
+  #       # key: /etc/synapse/static.key   # optional; default: <cert basename>.key
+  #   upstream: 10.0.0.10:8080            # whole-host single-upstream sugar
+
+  # ── Example: binding a host to specific listeners ──
+  # By default a host is served on every listener it could be served on.
+  # Naming listeners narrows that — this host is reachable only on the
+  # listener called "internal" in config.yaml's proxy.listeners.
+  # A request for it on any other listener gets a 404, the same answer an
+  # unconfigured host gets.
+  # admin.example.com:
+  #   listeners: [internal]
+  #   tls:
+  #     terminate:
+  #       cert: /etc/synapse/admin.pem
+  #   upstream: 10.0.0.9:8080
+
+  # ── Example: TLS passthrough (no termination at synapse) ──
+  # Useful for raw TCP services (Postgres, Redis, MQTT-over-TLS) where
+  # synapse should route by SNI without seeing L7. Wildcard SNI is
+  # supported.
+  #
+  # Passthrough and terminating hosts share the SAME listener: synapse
+  # reads the ClientHello SNI on proxy.address_tls and decides per
+  # connection. No separate port and no extra configuration — a host is
+  # passthrough because it says so here.
+  # db.example.com:
+  #   tls:
+  #     passthrough: true
+  #   upstream: 10.0.0.5:5432
+  #
+  # "*.internal.example.com":
+  #   tls:
+  #     passthrough: true
+  #   upstream: 192.168.1.100:443
+  #
+  # Plain-HTTP passthrough routes on the Host header instead of SNI, on
+  # proxy.address_http.
+  # legacy.example.com:
+  #   passthrough:
+  #     protocol: http
+  #   upstream: 10.0.0.6:8080
+  #
+  # A host can pass through on BOTH endpoints, each to its own backend —
+  # the TLS and plaintext endpoints are different ports on the backend
+  # too, so they need separate upstreams. Declare a block per wire:
+  # both.example.com:
+  #   passthrough:
+  #     tls:
+  #       upstream: 10.0.0.5:5432
+  #     http:
+  #       upstream: 10.0.0.5:8080
+  #
+  # A wire with no block simply is not served for that host: the
+  # connection goes to the normal L7 pipeline, which for a passthrough
+  # host has no route and answers 404.
+  #
+  # `proxy_protocol_v2` prepends a PROXY v2 header to the backend so it
+  # sees the real client address behind the byte-copy. Passthrough hosts
+  # only — a terminating host forwards the client address as
+  # X-Forwarded-For and rejects this field rather than ignoring it.
+  # pg.example.com:
+  #   tls:
+  #     passthrough: true
+  #   upstream: 10.0.0.5:5432
+  #   proxy_protocol_v2: true
+
+  # ── Example: weighted load balancing + custom timeouts ──
+  # slow-api.example.com:
+  #   tls:
+  #     terminate:
+  #       acme:
+  #         challenge_type: http-01
+  #   paths:
+  #     "/":
+  #       upstreams:
+  #         - addr: 10.0.0.1:8080
+  #           weight: 1
+  #         - addr: 10.0.0.2:8080
+  #           weight: 3            # 3× more traffic to .2
+  #       lb:
+  #         method: weighted_round_robin
+  #       timeouts:
+  #         connect: 30
+  #         read: 300
+  #         write: 60
+  #         idle: 120
+
+  # ── Example: HTTP health-checked upstream pool ──
+  # api.example.com:
+  #   tls:
+  #     terminate:
+  #       acme:
+  #         challenge_type: http-01
+  #   paths:
+  #     "/v1":
+  #       upstreams:
+  #         - addr: 192.168.1.10:3000
+  #         - addr: 192.168.1.11:3000
+  #       health_check:
+  #         type: http
+  #         path: /healthz
+  #         interval: 10s
+  #         consecutive_failures: 3
+  #         consecutive_successes: 2

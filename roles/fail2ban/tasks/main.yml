@@ -1,0 +1,58 @@
+---
+- name: Install fail2ban
+  ansible.builtin.package:
+    name: fail2ban
+    state: present
+  when: ansible_facts["os_family"] in ['Debian', 'RedHat']
+
+- name: Install jq (optional)
+  ansible.builtin.package:
+    name: jq
+    state: present
+
+- name: Deploy Gen0Sec action file from template
+  ansible.builtin.template:
+    src: gen0sec.conf.j2
+    dest: /etc/fail2ban/action.d/gen0sec.conf
+    mode: '0640'
+    owner: root
+    group: root
+  when: gen0sec_api_key != ""
+
+- name: Configure DEFAULT section in jail.local
+  ansible.builtin.blockinfile:
+    path: /etc/fail2ban/jail.local
+    block: |
+      [DEFAULT]
+      banaction = gen0sec
+      banaction_allports = gen0sec
+      backend = {{ fail2ban_backend }}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - DEFAULT"
+    create: yes
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Configure sshd jail
+  ansible.builtin.blockinfile:
+    path: /etc/fail2ban/jail.local
+    block: |
+      [sshd]
+      enabled = {{ 'true' if fail2ban_jail_enabled else 'false' }}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - SSHD"
+    create: yes
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Ensure fail2ban service is enabled and started
+  ansible.builtin.systemd:
+    name: fail2ban
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Restart fail2ban to apply configuration
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: restarted

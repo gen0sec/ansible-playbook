@@ -1,0 +1,305 @@
+---
+- name: Refuse variables renamed or removed with the current config schema
+  ansible.builtin.include_tasks: check_legacy_vars.yml
+
+- name: Detect architecture
+  ansible.builtin.set_fact:
+    synapse_arch: "{{ ansible_facts['architecture'] }}"
+  when: synapse_arch is not defined
+
+- name: Map architecture names for DEB packages  # noqa: jinja[spacing]
+  ansible.builtin.set_fact:
+    synapse_arch_deb: >-
+      {%- if synapse_arch == 'x86_64' -%}
+      amd64
+      {%- elif synapse_arch == 'aarch64' or synapse_arch == 'arm64' -%}
+      arm64
+      {%- else -%}
+      {{ synapse_arch }}
+      {%- endif -%}
+
+- name: Map architecture names for RPM and binary packages  # noqa: jinja[spacing]
+  ansible.builtin.set_fact:
+    synapse_arch_rpm: >-
+      {%- if synapse_arch == 'x86_64' -%}
+      x86_64
+      {%- elif synapse_arch == 'aarch64' or synapse_arch == 'arm64' -%}
+      aarch64
+      {%- else -%}
+      {{ synapse_arch }}
+      {%- endif -%}
+
+- name: Install curl
+  ansible.builtin.package:
+    name: curl
+    state: present
+
+- name: Install sed
+  ansible.builtin.package:
+    name: sed
+    state: present
+
+- name: Install ClamAV (Debian/Ubuntu)  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.package:
+    name:
+      - clamav
+      - clamav-daemon
+    state: present
+  register: clamav_debian_install
+  when:
+    - clamav_enabled | bool
+    - ansible_facts["os_family"] == 'Debian'
+
+- name: Install EPEL repository (RHEL/CentOS/Oracle Linux)  # noqa: ignore-errors
+  ansible.builtin.package:
+    name: epel-release
+    state: present
+  when:
+    - clamav_enabled | bool
+    - ansible_facts["os_family"] == 'RedHat'
+    - ansible_facts["distribution"] != 'Fedora'
+  ignore_errors: true
+
+- name: Install ClamAV (RHEL/CentOS/Fedora)  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.package:
+    name:
+      - clamav
+      - clamav-freshclam
+      - clamd
+    state: present
+  register: clamav_redhat_install
+  when:
+    - clamav_enabled | bool
+    - ansible_facts["os_family"] == 'RedHat'
+
+- name: Install Redis (Debian/Ubuntu)
+  ansible.builtin.package:
+    name: redis-server
+    state: present
+  when:
+    - redis_enabled | bool
+    - ansible_facts["os_family"] == 'Debian'
+
+- name: Install Redis (RHEL/CentOS/Fedora)
+  ansible.builtin.package:
+    name: redis
+    state: present
+  when:
+    - redis_enabled | bool
+    - ansible_facts["os_family"] == 'RedHat'
+
+- name: Run freshclam to download initial virus definitions  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.command:
+    cmd: freshclam
+  register: freshclam_result
+  changed_when: true
+  failed_when: false
+  when:
+    - clamav_enabled | bool
+    - (clamav_debian_install.changed | default(false)) or (clamav_redhat_install.changed | default(false))
+
+- name: Set ClamAV config directory  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    clamav_config_dir: "/etc/clamav"
+    clamav_config_file: "/etc/clamav/clamd.conf"
+  when:
+    - clamav_enabled | bool
+    - ansible_facts["os_family"] == 'Debian'
+
+- name: Set ClamAV config directory and service (Fedora)  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    clamav_config_dir: "/etc/clamd.d"
+    clamav_config_file: "/etc/clamd.d/scan.conf"
+    clamav_service_name: "clamd@scan"
+  when:
+    - clamav_enabled | bool
+    - ansible_facts["os_family"] == 'RedHat'
+    - ansible_facts["distribution"] == 'Fedora'
+
+- name: Set ClamAV config directory and service (RHEL/CentOS/Oracle Linux)  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    clamav_config_dir: "/etc/clamd.d"
+    clamav_config_file: "/etc/clamd.d/scan.conf"
+    clamav_service_name: "clamd@scan"
+  when:
+    - clamav_enabled | bool
+    - ansible_facts["os_family"] == 'RedHat'
+    - ansible_facts["distribution"] != 'Fedora'
+
+- name: Set ClamAV service name (Debian/Ubuntu)  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    clamav_service_name: "clamav-daemon"
+  when:
+    - clamav_enabled | bool
+    - ansible_facts["os_family"] == 'Debian'
+
+- name: Create ClamAV directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ clamav_config_dir | default('/etc/clamav') }}"
+    - /etc/systemd/system/clamav-daemon.socket.d
+    - /var/log/clamav/
+  when: clamav_enabled | bool
+
+# Shipped with the role rather than fetched at install time, so the config
+# is pinned to the role version and needs no network access.
+- name: Install ClamAV configuration
+  ansible.builtin.copy:
+    src: clamd.conf
+    dest: "{{ clamav_config_file | default('/etc/clamav/clamd.conf') }}"
+    mode: '0644'
+  when: clamav_enabled | bool
+
+- name: Update ClamAV user to clamscan for RedHat systems
+  ansible.builtin.lineinfile:
+    path: "{{ clamav_config_file | default('/etc/clamav/clamd.conf') }}"
+    regexp: '^User '
+    line: 'User clamscan'
+  when:
+    - clamav_enabled | bool
+    - ansible_facts["os_family"] == 'RedHat'
+
+- name: Install ClamAV systemd override
+  ansible.builtin.copy:
+    src: clamd-override.conf
+    dest: /etc/systemd/system/clamav-daemon.socket.d/override.conf
+    mode: '0644'
+  when: clamav_enabled | bool
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  when: clamav_enabled | bool
+
+- name: Check if ClamAV service exists  # noqa: risky-shell-pipe var-naming[no-role-prefix]
+  ansible.builtin.shell:
+    cmd: |
+      # Check for specific service instances, avoiding template units (clamd@.service)
+      # Try multiple methods to find the service
+      # Method 1: Check systemctl list-unit-files
+      systemctl list-unit-files --type=service --no-pager 2>/dev/null | \
+        grep -E "^(clamav-daemon|clamd@scan|clamd)\.service" | \
+        awk '{print $1}' | head -1 || \
+      # Method 2: Check if service can be shown with systemctl show
+      (systemctl show clamav-daemon.service 2>/dev/null | grep -q "LoadState=loaded" && echo "clamav-daemon.service") || \
+      (systemctl show clamd@scan.service 2>/dev/null | grep -q "LoadState=loaded" && echo "clamd@scan.service") || \
+      (systemctl show clamd.service 2>/dev/null | grep -q "LoadState=loaded" && echo "clamd.service") || \
+      echo ""
+  register: clamav_service_found
+  changed_when: false
+  failed_when: false
+  when: clamav_enabled | bool
+
+- name: Set ClamAV service name for enabling  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    # Only use detected service if found, otherwise try predefined name
+    clamav_service_to_enable: "{{ clamav_service_found.stdout if clamav_service_found.stdout != '' else clamav_service_name | default('') }}"
+  when: clamav_enabled | bool
+
+- name: Verify ClamAV service exists before enabling  # noqa: risky-shell-pipe var-naming[no-role-prefix]
+  ansible.builtin.shell:
+    cmd: |
+      if [ -n "{{ clamav_service_to_enable }}" ]; then
+        # Use systemctl show to check if service exists (more reliable than list-unit-files)
+        # Check with .service suffix first, then without
+        if systemctl show "{{ clamav_service_to_enable }}.service" 2>/dev/null | grep -q "LoadState=loaded"; then
+          echo "{{ clamav_service_to_enable }}.service"
+        elif systemctl show "{{ clamav_service_to_enable }}" 2>/dev/null | grep -q "LoadState=loaded"; then
+          echo "{{ clamav_service_to_enable }}"
+        else
+          echo ""
+        fi
+      else
+        echo ""
+      fi
+  register: clamav_service_verify
+  changed_when: false
+  failed_when: false
+  when: clamav_enabled | bool
+
+- name: Enable and start ClamAV daemon (if service exists)  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.systemd:
+    name: "{{ clamav_service_to_enable }}"
+    enabled: yes
+    state: started
+  when:
+    - clamav_enabled | bool
+    - clamav_service_to_enable is defined
+    - clamav_service_to_enable != ""
+    - clamav_service_verify.stdout != ""
+  ignore_errors: true
+  register: clamav_service_result
+
+- name: Display ClamAV service status
+  ansible.builtin.debug:
+    msg: >-
+      {%- if clamav_service_verify.stdout != "" -%}
+        {%- if clamav_service_result is succeeded -%}
+          ClamAV service {{ clamav_service_to_enable }} started and enabled successfully
+        {%- elif clamav_service_result is failed -%}
+          ClamAV service {{ clamav_service_to_enable }} found but could not be started
+        {%- else -%}
+          ClamAV service {{ clamav_service_to_enable }} found
+        {%- endif -%}
+      {%- elif clamav_service_found.stdout != "" -%}
+        ClamAV service {{ clamav_service_found.stdout }} detected but verification failed
+      {%- else -%}
+        ClamAV is installed but no systemd service found. ClamAV may need to be started manually or configured separately.
+      {%- endif -%}
+  when:
+    - clamav_enabled | bool
+    - clamav_service_verify is defined or clamav_service_found is defined
+
+# Installation from the Gen0Sec package repositories is added in a follow-up
+
+- name: Reload systemd daemon after service installation
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Create synapse directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /var/log/synapse
+    - /var/run/synapse
+    - /var/lib/synapse
+    - /etc/synapse
+
+# proxy.certificates: the certificate watcher starts only if the directory
+# exists when synapse starts.
+- name: Create the proxy certificates directory
+  ansible.builtin.file:
+    path: "{{ synapse_config_proxy_certificates | default('/etc/synapse/certs') }}"
+    state: directory
+    mode: '0755'
+  when: (synapse_config_mode | default('agent')) != 'agent'
+
+- name: Detect primary network interface if not explicitly set
+  ansible.builtin.set_fact:
+    synapse_config_network_iface: "{{ ansible_facts['default_ipv4']['interface'] | default('eth0') }}"
+  when: synapse_config_network_iface is not defined
+
+- name: Set platform API key from gen0sec_api_key if not explicitly set
+  ansible.builtin.set_fact:
+    synapse_config_platform_api_key: "{{ gen0sec_api_key }}"
+  when:
+    - gen0sec_api_key != ""
+    - synapse_config_platform_api_key is not defined
+
+- name: Generate config.yaml from template
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/synapse/config.yaml
+    mode: '0640'
+    backup: yes
+
+- name: Enable synapse service
+  ansible.builtin.systemd:
+    name: synapse
+    enabled: yes
+    daemon_reload: yes
