@@ -2,10 +2,21 @@
 # One of four packages, chosen in select.yml. They conflict, so the other
 # three go first. The deb postinst starts the unit; the rpm %post only
 # reloads systemd, so the service is handled explicitly in main.yml.
+# The deb prerm does not stop a running unit, so the other variants' units
+# are stopped first.
+- name: Stop the other synapse variants before removing them
+  ansible.builtin.include_tasks: stop_other_variants.yml
+
 - name: Remove the other synapse package variants
   ansible.builtin.package:
     name: "{{ synapse_conflicting_packages }}"
     state: absent
+
+# So systemd forgets the units of the variants that were running.
+- name: Reload systemd after replacing a running variant
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: synapse_other_variant_stop.results | default([]) | map(attribute='changed', default=false) | select | list | length > 0
 
 - name: Install synapse (apt)
   ansible.builtin.apt:
