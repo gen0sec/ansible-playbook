@@ -79,6 +79,11 @@ docker exec "$name" mkdir -p /work
 docker cp "$repo/." "$name:/work/" || die "copy of the repository failed"
 docker exec "$name" rm -rf /work/.git /work/graphify-out
 
+# A fresh image has an empty package-list directory that is only seconds old, so
+# apt's cache_valid_time judges it current while no package can be found. How
+# old the directory looks depends on the image store, so make it so here.
+[ "$family" = deb ] && docker exec "$name" bash -c 'rm -rf /var/lib/apt/lists/* && touch /var/lib/apt/lists'
+
 step "phase 1: pre-seed an old unit and a world-readable credential file"
 docker exec "$name" bash -c '
   printf "[Unit]\nDescription=old synapse\n[Service]\nExecStart=/usr/local/bin/synapse --daemon --config /etc/synapse/config.yaml\n[Install]\nWantedBy=multi-user.target\n" > /etc/systemd/system/synapse.service
