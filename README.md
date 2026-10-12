@@ -23,7 +23,7 @@ file, so both the packages and the metadata are signature-checked.
 
 ## Requirements
 
-- Ansible (`ansible-core`) on the control machine.
+- Ansible (`ansible-core` 2.14 or newer) on the control machine.
 - SSH access to the target hosts with sudo privileges.
 - Targets: Debian/Ubuntu, or RHEL-family Linux version 8 or newer with `dnf`.
   EL7 and `yum` are not supported and the play stops with a message.
