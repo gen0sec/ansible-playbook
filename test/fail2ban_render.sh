@@ -161,7 +161,7 @@ fi
 
 # --- the header task must carry no_log and diff: false (each one alone is enough
 # to keep the key out of the output on its own, so check both)
-tasks="${F2B_TASKS:-$ROOT/roles/fail2ban/tasks/main.yml}"
+tasks="${F2B_TASKS:-$ROOT/roles/fail2ban/tasks/enabled.yml}"
 block="$(awk '/^- name:/ { on = ($0 ~ /API key header file/) } on' "$tasks")"
 [ -n "$block" ] || fail "the header file task was not found in $tasks"
 printf '%s\n' "$block" | /usr/bin/grep -q '^  no_log: true$' || fail "the header file task lacks no_log: true"

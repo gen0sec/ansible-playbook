@@ -3,7 +3,7 @@ SHELL := bash
 
 # Commands here are the ones .github/workflows/ci.yml runs.
 
-.PHONY: help install build test test-install lint fmt clean
+.PHONY: help install build test test-install test-old-core lint fmt clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
@@ -41,6 +41,9 @@ DISTRO ?= ubuntu
 MODE ?= agent
 test-install: ## Install in a systemd container (DISTRO=ubuntu|oracle MODE=agent|proxy); needs docker and GEN0SEC_REPO_KEY
 	bash test/install_in_container.sh $(DISTRO) $(MODE)
+
+test-old-core: ## Run the fail2ban role on ansible-core 2.14 (Oracle Linux 9) in docker; needs docker
+	bash test/old_ansible_core.sh
 
 lint: ## yamllint and ansible-lint
 	yamllint .

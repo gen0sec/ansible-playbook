@@ -48,3 +48,16 @@ jobs:
 
       - name: Test
         run: make test
+
+  old-core:
+    name: Fail2Ban role on ansible-core 2.14
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run the role on the oldest supported ansible-core
+        run: make test-old-core
