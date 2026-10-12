@@ -1,10 +1,14 @@
 ---
 # Stop and disable the units of the package variants that are about to be
-# removed. The deb prerm does not stop its service, so without this the old
-# variant keeps running next to the new one; the rpm removal stops it, which
-# makes this a no-op there. Needs synapse_conflicting_packages (select.yml).
-# A unit that is absent is skipped, and one that is already stopped and
-# disabled reports no change. The chosen package's unit is never listed.
+# removed. The package removal does not reliably stop the unit: its
+# maintainer script can be refused by a policy-rc.d that denies service
+# actions, as in container images, or the host may not be booted with systemd
+# at that moment. Without this the old variant could keep running next to the
+# new one; where the removal does stop it, this is a no-op. Needs
+# synapse_conflicting_packages (select.yml).
+# A unit that is absent and not running is skipped, and one that is already
+# stopped and disabled reports no change. The chosen package's unit is never
+# listed.
 - name: Look for units of the other synapse variants
   ansible.builtin.command:
     argv:
@@ -36,3 +40,24 @@
       or ('ActiveState=reloading' in item.stdout_lines)
       or ('UnitFileState=enabled' in item.stdout_lines)
       or ('UnitFileState=enabled-runtime' in item.stdout_lines)
+
+# An orphan: the package is already gone and so is its unit file, but the
+# process runs on. systemd reports it as not-found and active, which the
+# systemd module cannot act on. Runs only for such units, so it reports
+# changed only when it stopped one; check mode skips it, as for any command.
+- name: Stop the running orphans of the other synapse variants
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - stop
+      - "{{ item.item }}.service"
+  loop: "{{ synapse_other_variant_units.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  changed_when: true
+  when:
+    - item.rc == 0
+    - "'LoadState=not-found' in item.stdout_lines"
+    - >-
+      ('ActiveState=active' in item.stdout_lines)
+      or ('ActiveState=activating' in item.stdout_lines)

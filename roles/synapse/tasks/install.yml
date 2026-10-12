@@ -2,8 +2,10 @@
 # One of four packages, chosen in select.yml. They conflict, so the other
 # three go first. The deb postinst starts the unit; the rpm %post only
 # reloads systemd, so the service is handled explicitly in main.yml.
-# The deb prerm does not stop a running unit, so the other variants' units
-# are stopped first.
+# The package removal does not reliably stop the unit: its maintainer script
+# can be refused by a policy-rc.d that denies service actions, as in container
+# images, or the host may not be booted with systemd at that moment. So the
+# other variants' units are stopped first.
 - name: Stop the other synapse variants before removing them
   ansible.builtin.include_tasks: stop_other_variants.yml
 
