@@ -30,6 +30,12 @@ for role in synapse fail2ban; do
     mode: "0600"
 STUB
 done
+# The playbook summary names the package the real role selects (select.yml).
+cat >>"$work/roles/synapse/tasks/main.yml" <<'STUB'
+- name: Stand in for the package the real role selects
+  ansible.builtin.set_fact:
+    synapse_package: synapse-agent
+STUB
 
 printf "[defaults]\n" >"$work/ansible.cfg"
 

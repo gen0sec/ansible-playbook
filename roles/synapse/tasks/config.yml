@@ -1,0 +1,73 @@
+---
+- name: Detect primary network interface if not explicitly set
+  ansible.builtin.set_fact:
+    synapse_config_network_iface: "{{ ansible_facts['default_ipv4']['interface'] | default('eth0') }}"
+  when: synapse_config_network_iface is not defined
+
+- name: Set platform API key from gen0sec_api_key if not explicitly set
+  ansible.builtin.set_fact:
+    synapse_config_platform_api_key: "{{ gen0sec_api_key }}"
+  when:
+    - gen0sec_api_key != ""
+    - synapse_config_platform_api_key is not defined
+  no_log: true
+  tags: gen0sec_secrets
+
+# The config can hold the API key: no diff, no backup copy, no task output.
+- name: Generate config.yaml from template
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/synapse/config.yaml
+    owner: root
+    group: root
+    mode: '0640'
+  no_log: true
+  diff: false
+  notify: Restart synapse service
+  tags: gen0sec_secrets
+
+# --check-config is not in every released binary. Ask the installed binary
+# rather than assume, and say so when it cannot validate.
+- name: Ask the installed binary whether it has --check-config
+  ansible.builtin.command:
+    argv: [/usr/bin/synapse, --help]
+  register: synapse_help
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Note whether --check-config is available
+  ansible.builtin.set_fact:
+    synapse_has_check_config: "{{ synapse_help.rc == 0 and '--check-config' in (synapse_help.stdout ~ synapse_help.stderr) }}"
+
+- name: Say that the config was not validated
+  ansible.builtin.debug:
+    msg: >-
+      NOTICE: /usr/bin/synapse does not list --check-config, so
+      /etc/synapse/config.yaml was NOT validated before the service restart.
+  when: not (synapse_has_check_config | bool)
+
+# The output is withheld: a config checker may echo what it read.
+- name: Validate config.yaml
+  ansible.builtin.command:
+    argv: [/usr/bin/synapse, --check-config, -c, /etc/synapse/config.yaml]
+  register: synapse_check_config
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when:
+    - synapse_has_check_config | bool
+    - not ansible_check_mode
+
+- name: Refuse an invalid config.yaml
+  ansible.builtin.fail:
+    msg: >-
+      /usr/bin/synapse --check-config rejected /etc/synapse/config.yaml
+      (exit {{ synapse_check_config.rc }}); the service was not restarted. Its
+      output is withheld because it may contain the API key. Run
+      "/usr/bin/synapse --check-config -c /etc/synapse/config.yaml" on the
+      host to read it.
+  when:
+    - synapse_has_check_config | bool
+    - not ansible_check_mode
+    - synapse_check_config.rc != 0

@@ -1,6 +1,29 @@
 ---
 # Default variables for synapse role
-synapse_version: "0.8.8"
+
+# Gen0Sec Repository Access credential (dashboard: Clients -> Repository
+# Access). Read from the control machine's environment so it never has to be
+# written to a file or a command line; or set it in an Ansible Vault file.
+gen0sec_repo_key: "{{ lookup('env', 'GEN0SEC_REPO_KEY') }}"  # noqa: var-naming[no-role-prefix]
+
+# Install the build with the bundled ML models (synapse-agent-ml, synapse-proxy-ml)
+synapse_ml: false
+# "" installs what the repository serves; a version such as "0.9.0" or
+# "0.9.0~rc.1" pins it (package release -1)
+synapse_version: ""
+synapse_package_state: present  # present, or latest to upgrade on every run
+synapse_service_state: started  # started or stopped; the unit is always enabled
+
+# Package repositories and their signing key
+synapse_apt_url: https://apt.gen0sec.com
+synapse_apt_suite: stable
+synapse_apt_component: main
+synapse_apt_keyring: /usr/share/keyrings/gen0sec.gpg
+synapse_rpm_url: https://rpm.gen0sec.com/
+synapse_yum_reposdir: /etc/yum.repos.d
+synapse_keyserver_url: https://keyserver.ubuntu.com
+synapse_repo_key_fingerprint: C1631499081A7146332D2038798FF49A6E9DA146
+
 gen0sec_api_key: "{{ g0s_api_key | default('') }}"  # Gen0Sec API key (used for synapse config); g0s_api_key is the legacy alias  # noqa: var-naming[no-role-prefix]
 clamav_enabled: true  # Set to false to disable ClamAV installation  # noqa: var-naming[no-role-prefix]
 redis_enabled: true   # Set to false to disable Redis installation  # noqa: var-naming[no-role-prefix]

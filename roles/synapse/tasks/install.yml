@@ -1,0 +1,24 @@
+---
+# One of four packages, chosen in select.yml. They conflict, so the other
+# three go first. The deb postinst starts the unit; the rpm %post only
+# reloads systemd, so the service is handled explicitly in main.yml.
+- name: Remove the other synapse package variants
+  ansible.builtin.package:
+    name: "{{ synapse_conflicting_packages }}"
+    state: absent
+
+- name: Install synapse (apt)
+  ansible.builtin.apt:
+    name: "{{ synapse_package_spec }}"
+    state: "{{ synapse_package_state }}"
+    allow_downgrade: "{{ (synapse_version | string) != '' }}"
+    update_cache: true
+    cache_valid_time: 3600
+  when: synapse_pkg_family == 'deb'
+
+- name: Install synapse (dnf)
+  ansible.builtin.dnf:
+    name: "{{ synapse_package_spec }}"
+    state: "{{ synapse_package_state }}"
+    allow_downgrade: "{{ (synapse_version | string) != '' }}"
+  when: synapse_pkg_family == 'rpm'

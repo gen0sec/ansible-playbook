@@ -2,8 +2,16 @@
 # Example group variables for all hosts
 # Copy this file to group_vars/all.yml and set your actual values
 
-# Synapse version to install
-synapse_version: "0.8.8"
+# Gen0Sec Repository Access credential: set the GEN0SEC_REPO_KEY environment
+# variable on the control machine (preferred), or put gen0sec_repo_key in an
+# Ansible Vault file. Never pass it with -e, which lands in shell history.
+
+# Synapse version to install. Empty installs what the repository serves; pin
+# with "0.9.0" or "0.9.0~rc.1".
+# synapse_version: ""
+
+# Install the build with the bundled ML models (synapse-agent-ml, synapse-proxy-ml)
+# synapse_ml: false
 
 # Gen0Sec API key, used by both synapse and fail2ban. Optional: without it
 # Synapse runs standalone. Uncomment and set it, or pass -e gen0sec_api_key=...

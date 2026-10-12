@@ -1,0 +1,6 @@
+---
+- name: Restart synapse service
+  ansible.builtin.systemd:
+    name: "{{ synapse_package }}"
+    state: restarted
+  when: synapse_service_state == 'started'

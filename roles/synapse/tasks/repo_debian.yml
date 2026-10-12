@@ -1,0 +1,108 @@
+---
+# Debian / Ubuntu: the credential for apt, the signing key, and the source.
+# The credential goes first so that every apt update below can authenticate,
+# including a re-run after a wrong key was corrected.
+- name: Create the apt auth directory
+  ansible.builtin.file:
+    path: /etc/apt/auth.conf.d
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Write the apt credentials for the Gen0Sec repository
+  ansible.builtin.copy:
+    content: "machine {{ synapse_apt_url | regex_replace('^https?://', '') }} login x password {{ gen0sec_repo_key }}\n"
+    dest: /etc/apt/auth.conf.d/gen0sec.conf
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+  tags: gen0sec_secrets
+
+- name: Install gnupg and CA certificates
+  ansible.builtin.apt:
+    name:
+      - gnupg
+      - ca-certificates
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Read the fingerprint of the installed keyring
+  ansible.builtin.command:
+    argv: [gpg, --show-keys, --with-colons, "{{ synapse_apt_keyring }}"]
+  register: synapse_keyring_show
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check whether the installed keyring is the signing key
+  ansible.builtin.set_fact:
+    synapse_keyring_ok: >-
+      {{ synapse_keyring_show.rc == 0
+         and (synapse_keyring_show.stdout_lines | select('match', '^fpr:') | first | default(''))
+             is search(':' ~ synapse_repo_key_fingerprint ~ ':') }}
+
+# The key is fetched from the keyserver, not from a Gen0Sec host, and checked
+# against the published fingerprint before the keyring is written.
+- name: Install the signing key
+  when: not (synapse_keyring_ok | bool)
+  block:
+    - name: Download the signing key
+      ansible.builtin.get_url:
+        url: "{{ synapse_keyserver_url }}/pks/lookup?op=get&search=0x{{ synapse_repo_key_fingerprint }}"
+        dest: "{{ synapse_apt_keyring }}.download"
+        mode: '0644'
+        force: true
+
+    - name: Read the fingerprint of the downloaded key
+      ansible.builtin.command:
+        argv: [gpg, --show-keys, --with-colons, "{{ synapse_apt_keyring }}.download"]
+      register: synapse_key_download_show
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Refuse a key with the wrong fingerprint
+      ansible.builtin.assert:
+        that:
+          - (synapse_key_download_show.stdout_lines | select('match', '^fpr:') | first | default('')) is search(':' ~ synapse_repo_key_fingerprint ~ ':')
+        fail_msg: >-
+          The key downloaded from {{ synapse_keyserver_url }} does not have
+          the fingerprint {{ synapse_repo_key_fingerprint }}. The keyring was
+          not written.
+        quiet: true
+      when: not ansible_check_mode
+
+    - name: Write the keyring
+      ansible.builtin.command:
+        argv: [gpg, --batch, --yes, --dearmor, -o, "{{ synapse_apt_keyring }}", "{{ synapse_apt_keyring }}.download"]
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: Set the keyring mode
+      ansible.builtin.file:
+        path: "{{ synapse_apt_keyring }}"
+        mode: '0644'
+      when: not ansible_check_mode
+
+  always:
+    - name: Remove the downloaded key
+      ansible.builtin.file:
+        path: "{{ synapse_apt_keyring }}.download"
+        state: absent
+
+- name: Add the Gen0Sec apt source
+  ansible.builtin.copy:
+    content: "deb [signed-by={{ synapse_apt_keyring }}] {{ synapse_apt_url }} {{ synapse_apt_suite }} {{ synapse_apt_component }}\n"
+    dest: /etc/apt/sources.list.d/gen0sec.list
+    owner: root
+    group: root
+    mode: '0644'
+  register: synapse_apt_source
+
+- name: Refresh the package index for the new source
+  ansible.builtin.apt:
+    update_cache: true
+  when: (synapse_apt_source is changed) or not (synapse_keyring_ok | bool)
