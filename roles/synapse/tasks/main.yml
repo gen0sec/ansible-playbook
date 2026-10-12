@@ -5,9 +5,6 @@
 - name: Choose the package and check the inputs
   ansible.builtin.include_tasks: select.yml
 
-- name: Remove what the earlier, pre-package role installed
-  ansible.builtin.include_tasks: legacy_cleanup.yml
-
 - name: Add the Gen0Sec package repository (apt)
   ansible.builtin.include_tasks: repo_debian.yml
   when: synapse_pkg_family == 'deb'
@@ -240,6 +237,12 @@
     - clamav_enabled | bool
     - clamav_service_verify is defined or clamav_service_found is defined
 
+# After the repository is set up and refreshed, so that a wrong key or an
+# unreachable repository stops the run before anything is removed and the host
+# keeps the Synapse it has.
+- name: Remove what the earlier, pre-package role installed
+  ansible.builtin.include_tasks: legacy_cleanup.yml
+
 - name: Install the synapse package
   ansible.builtin.include_tasks: install.yml
 
@@ -252,15 +255,26 @@
     - /var/log/synapse
     - /var/run/synapse
     - /var/lib/synapse
-    - /etc/synapse
+
+# The packages ship /etc/synapse as 0750 root:root (it holds config.yaml, which
+# can carry the API key).
+- name: Create the synapse configuration directory
+  ansible.builtin.file:
+    path: /etc/synapse
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
 
 # proxy.certificates: the certificate watcher starts only if the directory
-# exists when synapse starts.
+# exists when synapse starts. 0750 root:root, as the package creates it.
 - name: Create the proxy certificates directory
   ansible.builtin.file:
     path: "{{ synapse_config_proxy_certificates | default('/etc/synapse/certs') }}"
     state: directory
-    mode: '0755'
+    owner: root
+    group: root
+    mode: '0750'
   when: (synapse_config_mode | default('agent')) != 'agent'
 
 - name: Configure synapse

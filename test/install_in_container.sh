@@ -7,7 +7,11 @@
 #
 # Phases:
 #   1. pre-seed: an old synapse.service and a credential file with mode 0644
-#   2. install the requested mode, then verify_install.sh
+#   1b. run with a WRONG key: it must fail at the repository, and the old unit
+#      must still be there (nothing is removed before the repository works)
+#   2. run again with the real key, within the hour apt trusts its index: it
+#      must succeed (the corrected key must refresh the index), then
+#      install the requested mode and run verify_install.sh
 #   3. run again: changed=0
 #   4. if mode is agent, switch to proxy (the other package replaces it) and
 #      verify again
@@ -83,7 +87,15 @@ docker exec "$name" bash -c '
   chmod 0644 '"$creds"'
   systemctl daemon-reload' || die "pre-seed failed"
 
-step "phase 2: install $mode"
+step "phase 1b: a wrong key fails at the repository and removes nothing"
+if docker exec -e GEN0SEC_REPO_KEY=not-a-real-key-0000 "$name" bash -c 'set -o pipefail; cd /work && ANSIBLE_NOCOLOR=1 ansible-playbook -i localhost, -c local playbook.yml \
+    -e clamav_enabled=false -e redis_enabled=false -e fail2ban_enabled=false -e synapse_config_mode='"$mode"' 2>&1 | tee -a /var/log/gen0sec-ansible.log'; then
+  die "a run with a wrong key succeeded"
+fi
+in_ct test -e /etc/systemd/system/synapse.service || die "the wrong-key run removed the old synapse.service"
+echo "ok   the wrong key failed and the old unit is still there"
+
+step "phase 2: install $mode with the real key (recovery after the wrong one)"
 run_playbook -e synapse_config_mode="$mode" || die "first run failed (see the output above)"
 in_ct test ! -e /etc/systemd/system/synapse.service || die "the old synapse.service was not removed"
 in_ct /work/test/verify_install.sh "synapse-$mode" "$family" || die "verification after the first run failed"

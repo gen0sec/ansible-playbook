@@ -1,0 +1,31 @@
+---
+- name: Protected copy
+  ansible.builtin.copy:
+    content: "{{ gen0sec_repo_key }}"
+    dest: /tmp/x
+    mode: "0600"
+  no_log: true
+  diff: false
+
+- name: Protected fact, secret only in when
+  ansible.builtin.set_fact:
+    synapse_x: "{{ gen0sec_api_key }}"
+  when: gen0sec_api_key != ""
+  no_log: true
+
+- name: Emptiness test only
+  ansible.builtin.assert:
+    that:
+      - gen0sec_repo_key | default("", true) | string | trim | length > 0
+    fail_msg: gen0sec_repo_key must be set
+    quiet: true
+
+- name: Nested and protected
+  block:
+    - name: Inner template
+      ansible.builtin.template:
+        src: config.yaml.j2
+        dest: /tmp/y
+        mode: "0640"
+      no_log: true
+      diff: false

@@ -13,6 +13,13 @@
 # key through the environment, the API key through a 0600 vars file, never on
 # the command line.
 #
+# The repository tasks run with the tag filter only: the rest of those files
+# needs the network (get_url on the keyserver), apt and the dnf python module,
+# none of which a check-mode test on a Linux box of the other family has, and
+# the tests cannot stub a module. config.yml needs none of that, so it also runs
+# with no filter at all. A leaking task that is missing its tag is caught by
+# the static check (test/secret_protections.sh), not by this test.
+#
 # Two controls keep this from passing vacuously:
 #   1. the output must contain ansible's no_log notice, which proves the
 #      protected tasks ran and were censored rather than skipped;
@@ -53,6 +60,23 @@ cat > "$OUT/harness.yml" <<'PLAY'
         msg: restart
 PLAY
 
+# config.yml needs no network and no package manager, so it also runs with NO
+# tag filter: every task in it runs, tagged or not, and none may print a secret.
+cat > "$OUT/config_all.yml" <<'PLAY'
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - "{{ role_dir }}/defaults/main.yml"
+  tasks:
+    - ansible.builtin.import_tasks: "{{ role_dir }}/tasks/select.yml"
+    - ansible.builtin.import_tasks: "{{ role_dir }}/tasks/config.yml"
+  handlers:
+    - name: Restart synapse service
+      ansible.builtin.debug:
+        msg: restart
+PLAY
+
 cat > "$OUT/leaky.yml" <<'PLAY'
 - hosts: localhost
   connection: local
@@ -86,7 +110,7 @@ play() {
 
 check_family() { # <name> <facts> <repo task file> <task name that must have run>
   local name="$1"
-  play "$name" "$OUT/harness.yml" gen0sec_secrets -e "$2" -e "repo_tasks=$3"
+  play "$name" "$OUT/harness.yml" gen0sec_secrets -e "$2" -e "repo_tasks=$3" -e synapse_has_check_config=false
   local st=$?
   if [ "$st" -ne 0 ]; then fail "$name: the play failed (exit $st)"; cat "$OUT/$name.log"; return; fi
   local ok=1 m
@@ -106,6 +130,19 @@ check_family() { # <name> <facts> <repo task file> <task name that must have run
 
 check_family debian "$DEB" repo_debian.yml "Write the apt credentials for the Gen0Sec repository"
 check_family redhat "$RPM" repo_redhat.yml "Define the Gen0Sec yum repository"
+
+# Everything in config.yml, untagged tasks included.
+play config_all "$OUT/config_all.yml" - -e "$DEB"
+st=$?
+if [ "$st" -ne 0 ]; then fail "config_all: the play failed (exit $st)"; cat "$OUT/config_all.log"
+elif /usr/bin/grep -qF -e "$REPO_MARKER" -e "$API_MARKER" "$OUT/config_all.log"; then
+  fail "config_all: a secret is in the output"
+elif ! /usr/bin/grep -qF -- "TASK [Generate config.yaml from template]" "$OUT/config_all.log" \
+  || ! /usr/bin/grep -qF -- "TASK [Ask the installed binary whether it has --check-config]" "$OUT/config_all.log"; then
+  fail "config_all: control: the untagged tasks did not run"
+else
+  echo "ok   config_all (no tag filter)"
+fi
 
 # Control 2: the search must be able to see a leak.
 play leaky "$OUT/leaky.yml" - -e "$DEB" -e "leak_dest=$OUT/leak.txt"

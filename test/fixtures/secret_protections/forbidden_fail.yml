@@ -1,0 +1,5 @@
+---
+- name: Fail that echoes the key
+  ansible.builtin.fail:
+    msg: "{{ gen0sec_repo_key }}"
+  no_log: true

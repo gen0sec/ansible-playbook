@@ -33,6 +33,9 @@ test: ## Run the tests that need no synapse binary
 	GEN0SEC_FAIL2BAN_PYTHONPATH="$$(pwd)/$(F2B_DIR)/root/usr/lib/python3/dist-packages" python3 test/fail2ban_action.py
 	bash test/package_selection.sh
 	bash test/no_secret_in_output.sh
+	bash test/secret_protections.sh
+	bash test/verify_key.sh
+	bash test/apt_refresh.sh
 
 DISTRO ?= ubuntu
 MODE ?= agent

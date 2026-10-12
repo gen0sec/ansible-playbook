@@ -19,6 +19,7 @@
     mode: '0600'
   no_log: true
   diff: false
+  register: synapse_apt_credential
   tags: gen0sec_secrets
 
 - name: Install gnupg and CA certificates
@@ -30,54 +31,34 @@
     update_cache: true
     cache_valid_time: 3600
 
-- name: Read the fingerprint of the installed keyring
-  ansible.builtin.command:
-    argv: [gpg, --show-keys, --with-colons, "{{ synapse_apt_keyring }}"]
-  register: synapse_keyring_show
-  changed_when: false
-  failed_when: false
-  check_mode: false
+# The installed keyring must be exactly the pinned key (see verify_key.yml);
+# anything else is replaced.
+- name: Check the installed keyring
+  ansible.builtin.include_tasks: verify_key.yml
+  vars:
+    synapse_key_file: "{{ synapse_apt_keyring }}"
+    synapse_key_fatal: false
 
-- name: Check whether the installed keyring is the signing key
+# Kept apart from synapse_key_file_ok, which the check of the download below
+# sets again: the block's condition is tested for each of its tasks.
+- name: Note whether the keyring is already the signing key
   ansible.builtin.set_fact:
-    synapse_keyring_ok: >-
-      {{ synapse_keyring_show.rc == 0
-         and (synapse_keyring_show.stdout_lines | select('match', '^fpr:') | first | default(''))
-             is search(':' ~ synapse_repo_key_fingerprint ~ ':') }}
+    synapse_key_installed: "{{ synapse_key_file_ok }}"
 
 # The key is fetched from the keyserver, not from a Gen0Sec host, and checked
 # against the published fingerprint before the keyring is written.
 - name: Install the signing key
-  when: not (synapse_keyring_ok | bool)
+  when: not (synapse_key_installed | bool)
   block:
-    - name: Download the signing key
-      ansible.builtin.get_url:
-        url: "{{ synapse_keyserver_url }}/pks/lookup?op=get&search=0x{{ synapse_repo_key_fingerprint }}"
-        dest: "{{ synapse_apt_keyring }}.download"
-        mode: '0644'
-        force: true
-
-    - name: Read the fingerprint of the downloaded key
-      ansible.builtin.command:
-        argv: [gpg, --show-keys, --with-colons, "{{ synapse_apt_keyring }}.download"]
-      register: synapse_key_download_show
-      changed_when: false
-      when: not ansible_check_mode
-
-    - name: Refuse a key with the wrong fingerprint
-      ansible.builtin.assert:
-        that:
-          - (synapse_key_download_show.stdout_lines | select('match', '^fpr:') | first | default('')) is search(':' ~ synapse_repo_key_fingerprint ~ ':')
-        fail_msg: >-
-          The key downloaded from {{ synapse_keyserver_url }} does not have
-          the fingerprint {{ synapse_repo_key_fingerprint }}. The keyring was
-          not written.
-        quiet: true
-      when: not ansible_check_mode
+    - name: Download and check the signing key
+      ansible.builtin.include_tasks: fetch_key.yml
+      vars:
+        synapse_key_download: "{{ synapse_apt_keyring }}.download"
 
     - name: Write the keyring
       ansible.builtin.command:
         argv: [gpg, --batch, --yes, --dearmor, -o, "{{ synapse_apt_keyring }}", "{{ synapse_apt_keyring }}.download"]
+      register: synapse_keyring_write
       changed_when: true
       when: not ansible_check_mode
 
@@ -102,7 +83,34 @@
     mode: '0644'
   register: synapse_apt_source
 
+# apt keeps what it fetched under a name made from the repository URL, with
+# the slashes turned into underscores: https://apt.gen0sec.com and suite
+# "stable" give apt.gen0sec.com_dists_stable_InRelease (Release for a
+# repository without a signed InRelease). A missing file means no refresh has
+# succeeded for this source, e.g. because the previous run failed at the
+# refresh for a reason unrelated to the credential.
+- name: Look for the fetched package index of the Gen0Sec source
+  ansible.builtin.stat:
+    path: "{{ synapse_apt_lists_dir }}/{{ synapse_apt_url | regex_replace('^[a-z]+://', '') | regex_replace('/+$', '') | replace(':', '%3a') | replace('/', '_') }}_dists_{{ synapse_apt_suite | replace('/', '_') }}_{{ item }}"
+  loop: [InRelease, Release]
+  register: synapse_apt_index
+
+# The index must be refreshed whenever what apt authenticates with or against
+# changed, not only when the source file did: a run with a wrong key leaves
+# the source and keyring in place, and the run with the corrected key then
+# changes only the credential. It must also be refreshed when apt holds no
+# index for the source at all. install.yml trusts an index younger than an
+# hour, so a skipped refresh here fails there with "No package matching".
+# test/apt_refresh.sh runs this condition on its own.
+- name: Decide whether the package index needs refreshing
+  ansible.builtin.set_fact:
+    synapse_apt_refresh_needed: >-
+      {{ synapse_apt_credential is changed
+         or synapse_keyring_write is changed
+         or synapse_apt_source is changed
+         or not (synapse_apt_index.results | map(attribute='stat.exists') | select | list | length > 0) }}
+
 - name: Refresh the package index for the new source
   ansible.builtin.apt:
     update_cache: true
-  when: (synapse_apt_source is changed) or not (synapse_keyring_ok | bool)
+  when: synapse_apt_refresh_needed | bool

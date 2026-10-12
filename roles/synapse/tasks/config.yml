@@ -13,19 +13,6 @@
   no_log: true
   tags: gen0sec_secrets
 
-# The config can hold the API key: no diff, no backup copy, no task output.
-- name: Generate config.yaml from template
-  ansible.builtin.template:
-    src: config.yaml.j2
-    dest: /etc/synapse/config.yaml
-    owner: root
-    group: root
-    mode: '0640'
-  no_log: true
-  diff: false
-  notify: Restart synapse service
-  tags: gen0sec_secrets
-
 # --check-config is not in every released binary. Ask the installed binary
 # rather than assume, and say so when it cannot validate.
 - name: Ask the installed binary whether it has --check-config
@@ -47,27 +34,35 @@
       /etc/synapse/config.yaml was NOT validated before the service restart.
   when: not (synapse_has_check_config | bool)
 
-# The output is withheld: a config checker may echo what it read.
-- name: Validate config.yaml
-  ansible.builtin.command:
-    argv: [/usr/bin/synapse, --check-config, -c, /etc/synapse/config.yaml]
-  register: synapse_check_config
-  changed_when: false
-  failed_when: false
-  no_log: true
-  when:
-    - synapse_has_check_config | bool
-    - not ansible_check_mode
-
-- name: Refuse an invalid config.yaml
-  ansible.builtin.fail:
-    msg: >-
-      /usr/bin/synapse --check-config rejected /etc/synapse/config.yaml
-      (exit {{ synapse_check_config.rc }}); the service was not restarted. Its
-      output is withheld because it may contain the API key. Run
-      "/usr/bin/synapse --check-config -c /etc/synapse/config.yaml" on the
-      host to read it.
-  when:
-    - synapse_has_check_config | bool
-    - not ansible_check_mode
-    - synapse_check_config.rc != 0
+# The template module checks the new file with --check-config before it
+# replaces /etc/synapse/config.yaml, so an invalid config never reaches disk
+# and the running service keeps the last good one. %s is the temporary file.
+# validate is left out when the binary has no --check-config.
+#
+# The config can hold the API key: no diff, no backup copy, no task output.
+# The checker's own output is withheld with it, so the rescue says where to
+# read it.
+- name: Write config.yaml, checked first when the binary can
+  block:
+    - name: Generate config.yaml from template
+      ansible.builtin.template:
+        src: config.yaml.j2
+        dest: /etc/synapse/config.yaml
+        owner: root
+        group: root
+        mode: '0640'
+        validate: "{{ '/usr/bin/synapse --check-config -c %s' if synapse_has_check_config | bool else omit }}"
+      no_log: true
+      diff: false
+      notify: Restart synapse service
+      tags: gen0sec_secrets
+  rescue:
+    - name: Refuse a config.yaml that cannot be written or does not validate
+      ansible.builtin.fail:
+        msg: >-
+          /etc/synapse/config.yaml was not replaced and the service was not
+          restarted: the template could not be written or
+          "/usr/bin/synapse --check-config" rejected it. The output is
+          withheld because it may contain the API key. Render the same
+          settings to a file and run "/usr/bin/synapse --check-config -c FILE"
+          on the host to read the reason.

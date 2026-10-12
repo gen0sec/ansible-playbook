@@ -19,10 +19,13 @@ synapse_apt_url: https://apt.gen0sec.com
 synapse_apt_suite: stable
 synapse_apt_component: main
 synapse_apt_keyring: /usr/share/keyrings/gen0sec.gpg
+synapse_apt_lists_dir: /var/lib/apt/lists
 synapse_rpm_url: https://rpm.gen0sec.com/
 synapse_yum_reposdir: /etc/yum.repos.d
 synapse_keyserver_url: https://keyserver.ubuntu.com
 synapse_repo_key_fingerprint: C1631499081A7146332D2038798FF49A6E9DA146
+synapse_key_url: "{{ synapse_keyserver_url }}/pks/lookup?op=get&search=0x{{ synapse_repo_key_fingerprint }}"
+synapse_rpm_key_file: /etc/pki/rpm-gpg/RPM-GPG-KEY-gen0sec
 
 gen0sec_api_key: "{{ g0s_api_key | default('') }}"  # Gen0Sec API key (used for synapse config); g0s_api_key is the legacy alias  # noqa: var-naming[no-role-prefix]
 clamav_enabled: true  # Set to false to disable ClamAV installation  # noqa: var-naming[no-role-prefix]

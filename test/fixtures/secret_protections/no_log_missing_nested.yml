@@ -1,0 +1,10 @@
+---
+- name: Outer
+  block:
+    - name: Fine
+      ansible.builtin.debug:
+        msg: hello
+  rescue:
+    - name: Deeper
+      ansible.builtin.apt:
+        name: "{{ {'a': [gen0sec_repo_key]} }}"

@@ -104,6 +104,9 @@ expect_ok rpm_version_rc  "$RPM" '{"synapse_version":"0.9.0~rc.1"}' synapse-agen
 expect_refused empty_key        "$DEB" '{}' 'Repository Access' ''
 expect_refused whitespace_key   "$DEB" '{}' 'Repository Access' '   '
 expect_refused key_with_space   "$DEB" '{}' 'Repository Access' 'two words'
+# A YAML null (`gen0sec_repo_key: ~` in a vars file) is not a key: it must not
+# render as an empty or "None" password.
+expect_refused null_key         "$DEB" '{"gen0sec_repo_key":null}' 'Repository Access'
 expect_refused bad_mode         "$DEB" '{"synapse_config_mode":"sidecar"}' "synapse_config_mode"
 expect_refused bad_version      "$DEB" '{"synapse_version":"1.0 evil"}' "synapse_version"
 expect_refused bad_state        "$DEB" '{"synapse_package_state":"absent"}' "synapse_package_state"

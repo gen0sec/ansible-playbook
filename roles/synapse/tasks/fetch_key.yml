@@ -1,0 +1,17 @@
+---
+# Download the signing key to synapse_key_download and refuse it unless it is
+# exactly the pinned key (see verify_key.yml). The key is fetched from the
+# keyserver, not from a Gen0Sec host. The caller installs it from the
+# verified file and removes the download.
+- name: Download the signing key
+  ansible.builtin.get_url:
+    url: "{{ synapse_key_url }}"
+    dest: "{{ synapse_key_download }}"
+    mode: '0644'
+    force: true
+
+- name: Check the downloaded key
+  ansible.builtin.include_tasks: verify_key.yml
+  vars:
+    synapse_key_file: "{{ synapse_key_download }}"
+    synapse_key_fatal: true

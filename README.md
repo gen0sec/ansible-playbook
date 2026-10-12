@@ -3,8 +3,15 @@
 Ansible playbook and roles to deploy [Synapse](https://gen0sec.com) in agent or proxy mode.
 
 Synapse is installed from the Gen0Sec package repositories (APT on
-Debian/Ubuntu, DNF on RHEL-family), signed and authenticated with a repository
-key. Both the repository and the package signature are verified.
+Debian/Ubuntu, DNF on RHEL-family) with a repository key.
+
+The signing key is downloaded from a keyserver and must be exactly one primary
+key with the pinned fingerprint (`synapse_repo_key_fingerprint`); a download
+with a second key is refused. On APT the repository metadata (`InRelease`) is
+verified against that key, and the packages are checked against the hashes in
+it. On DNF the key is written to `/etc/pki/rpm-gpg/RPM-GPG-KEY-gen0sec` and the
+repository is configured with `gpgcheck` and `repo_gpgcheck` against that local
+file, so both the packages and the metadata are signature-checked.
 
 ## Layout
 
@@ -56,8 +63,10 @@ One of four mutually exclusive packages, chosen by mode and `synapse_ml`:
 The systemd unit is named after the package. Changing mode or `synapse_ml`
 removes the other three packages first, so a re-run switches cleanly.
 `/etc/synapse/config.yaml` (root, mode 0640) is generated from the role template and
-validated with `synapse --check-config` when the installed binary supports it;
-otherwise the play prints a notice and skips that check.
+checked with `synapse --check-config` before it replaces the live file, when
+the installed binary supports it; otherwise the play prints a notice and skips
+that check. `/etc/synapse` and the proxy certificates directory are root-owned
+with mode 0750, as the packages create them.
 
 ## Variables
 

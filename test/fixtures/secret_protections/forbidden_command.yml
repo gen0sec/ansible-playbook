@@ -1,0 +1,5 @@
+---
+- name: Key on a command line
+  ansible.builtin.command:
+    argv: [echo, "{{ gen0sec_repo_key }}"]
+  no_log: true

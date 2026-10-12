@@ -28,8 +28,8 @@
 - name: Require the Repository Access credential
   ansible.builtin.assert:
     that:
-      - gen0sec_repo_key | string | trim | length > 0
-      - gen0sec_repo_key | string is match('^\S+$')
+      - gen0sec_repo_key | default('', true) | string | trim | length > 0
+      - gen0sec_repo_key | default('', true) | string is match('^\S+$')
     fail_msg: >-
       gen0sec_repo_key must be your Gen0Sec Repository Access credential, as
       one token without whitespace. Create it in the dashboard under
