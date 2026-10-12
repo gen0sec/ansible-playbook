@@ -88,12 +88,24 @@ docker exec "$name" bash -c '
   systemctl daemon-reload' || die "pre-seed failed"
 
 step "phase 1b: a wrong key fails at the repository and removes nothing"
-if docker exec -e GEN0SEC_REPO_KEY=not-a-real-key-0000 "$name" bash -c 'set -o pipefail; cd /work && ANSIBLE_NOCOLOR=1 ansible-playbook -i localhost, -c local playbook.yml \
-    -e clamav_enabled=false -e redis_enabled=false -e fail2ban_enabled=false -e synapse_config_mode='"$mode"' 2>&1 | tee -a /var/log/gen0sec-ansible.log'; then
+if out="$(docker exec -e GEN0SEC_REPO_KEY=not-a-real-key-0000 "$name" bash -c 'set -o pipefail; cd /work && ANSIBLE_NOCOLOR=1 ansible-playbook -i localhost, -c local playbook.yml \
+    -e clamav_enabled=false -e redis_enabled=false -e fail2ban_enabled=false -e synapse_config_mode='"$mode"' 2>&1 | tee -a /var/log/gen0sec-ansible.log')"; then
   die "a run with a wrong key succeeded"
 fi
+# Any failure would do for the check above, and a failure earlier on (in the
+# selection of the repository, or the install of gnupg) would leave phase 2
+# with a host that never reached the half-configured state it is meant to
+# recover from. So the failure must be the refresh of the index, refused with
+# a 401.
+refresh_task="Refresh the package index for the new source"
+[ "$family" = rpm ] && refresh_task="Refresh the Gen0Sec repository metadata"
+failed="$(awk '/^TASK \[/ {task=$0} /^fatal: / && !/\.\.\.ignoring/ {print task " || " $0; exit}' <<< "$out")"
+case "$failed" in
+  *"$refresh_task"*"||"*401*) ;;
+  *) echo "$out" | tail -n 15; die "the wrong-key run did not fail at \"$refresh_task\" with a 401: ${failed:-no failed task found}" ;;
+esac
 in_ct test -e /etc/systemd/system/synapse.service || die "the wrong-key run removed the old synapse.service"
-echo "ok   the wrong key failed and the old unit is still there"
+echo "ok   the wrong key failed at \"$refresh_task\" with a 401 and the old unit is still there"
 
 step "phase 2: install $mode with the real key (recovery after the wrong one)"
 run_playbook -e synapse_config_mode="$mode" || die "first run failed (see the output above)"

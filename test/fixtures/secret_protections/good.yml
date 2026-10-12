@@ -29,3 +29,10 @@
         mode: "0640"
       no_log: true
       diff: false
+
+- name: Fail with a secret only in when and in prose
+  ansible.builtin.fail:
+    msg: >-
+      fail2ban_enabled is true but gen0sec_api_key is empty. Set
+      gen0sec_api_key in the inventory.
+  when: gen0sec_api_key | default('') | length == 0

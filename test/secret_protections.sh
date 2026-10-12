@@ -49,6 +49,8 @@ expect diff_missing_yum      diff
 expect forbidden_command     forbidden-module
 expect forbidden_debug       forbidden-module
 expect forbidden_assert_msg  secret-in-message
-expect forbidden_fail        forbidden-module
+expect forbidden_fail        secret-in-message
+expect forbidden_fail_when_interpolated secret-in-message
+expect template_secret_unlisted no_log
 
 exit "$rc"

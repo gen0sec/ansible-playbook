@@ -1,0 +1,6 @@
+---
+# `when` and the prose are fine; the {{ }} in msg prints the key.
+- name: Fail that interpolates the key beside a clean when
+  ansible.builtin.fail:
+    msg: "gen0sec_api_key is {{ gen0sec_api_key }}"
+  when: gen0sec_api_key | default('') | length == 0
