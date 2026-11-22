@@ -12,6 +12,8 @@ This role installs Synapse from the Gen0Sec package repositories and configures 
 - `synapse_service_state`: `started` (default) or `stopped`
 - `synapse_apt_url`, `synapse_rpm_url`, `synapse_apt_suite`, `synapse_apt_component`, `synapse_apt_keyring`, `synapse_keyserver_url`, `synapse_repo_key_fingerprint`: repository and signing key settings
 - `gen0sec_api_key`: Gen0Sec API key to set in config.yaml (optional)
+- `synapse_config_network_interfaces`: per-interface XDP attach and features (`network.interfaces`); replaces `synapse_config_network_iface`/`_ifaces` when set
+- `synapse_config_capture_*`, `synapse_config_firewall_*`, `synapse_config_ids_*`, `synapse_config_ml_*`: the capture, firewall/smart firewall, IDS and ML switches. Each section is written only when one of its variables is set; unset, Synapse's code defaults apply, and the IDS is off. See `defaults/main.yml` for the list
 - `clamav_enabled`: Enable ClamAV installation and configuration (default: `true`)
 - `redis_enabled`: Enable Redis installation (default: `true`)
 

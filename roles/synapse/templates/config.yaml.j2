@@ -14,13 +14,100 @@ mode: {{ synapse_mode | quote }}
 
 # Network Configuration
 network:
+{% if synapse_config_network_interfaces | default({}) %}
+  # Per-interface features. They replace iface/ifaces: only the links matched
+  # here are attached, each with its own features (firewall, ids, ids_egress,
+  # smart_firewall, fingerprint, ssl_uprobe); every other link is left alone.
+  interfaces:
+{% for name, spec in synapse_config_network_interfaces.items() %}
+    {{ name | to_json }}:
+      match: {{ spec.match | to_json }}
+      features: {{ spec.features | default([]) | to_json }}
+{% if spec.require_native is defined %}
+      require_native: {{ spec.require_native | bool | lower }}
+{% endif %}
+{% endfor %}
+{% else %}
   # The network interface to attach the XDP program to
   # Automatically detects primary interface from ansible_facts['default_ipv4']['interface'] if not specified
   iface: {{ synapse_config_network_iface | default(ansible_facts['default_ipv4']['interface'] | default('eth0')) | quote }}
   # Additional network interfaces for XDP attach (overrides iface if set)
   ifaces: {{ synapse_config_network_ifaces | default([]) | to_json }}
+{% endif %}
   # IP version support mode: "ipv4", "ipv6", or "both" (default: "both")
   ip_version: {{ synapse_config_network_ip_version | default('both') | quote }}
+{% if synapse_config_capture_enabled is defined or synapse_config_capture_mode is defined %}
+
+# Packet capture for JA4+ fingerprinting
+capture:
+{% if synapse_config_capture_enabled is defined %}
+  enabled: {{ synapse_config_capture_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_capture_mode is defined %}
+  mode: {{ synapse_config_capture_mode | quote }}
+{% endif %}
+{% endif %}
+{% if synapse_config_firewall_enabled is defined or synapse_config_firewall_mode is defined or synapse_config_firewall_amygdala_enabled is defined %}
+
+# Firewall: backend and smart firewall (amygdala)
+firewall:
+{% if synapse_config_firewall_enabled is defined %}
+  enabled: {{ synapse_config_firewall_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_firewall_mode is defined %}
+  # auto, xdp, nftables, iptables or none
+  mode: {{ synapse_config_firewall_mode | quote }}
+{% endif %}
+{% if synapse_config_firewall_amygdala_enabled is defined %}
+  amygdala:
+    enabled: {{ synapse_config_firewall_amygdala_enabled | bool | lower }}
+{% endif %}
+{% endif %}
+{% if synapse_config_ids_enabled is defined or synapse_config_ids_capture_mode is defined
+      or synapse_config_ids_rule_paths is defined or synapse_config_ids_enforce_block is defined
+      or synapse_config_ids_snaplen is defined or synapse_config_ids_address_vars is defined
+      or synapse_config_ids_port_vars is defined %}
+
+# Inline IDS (Thalamus). The code default is off; the shipped config.yaml
+# turns it on.
+ids:
+{% if synapse_config_ids_enabled is defined %}
+  enabled: {{ synapse_config_ids_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_ids_capture_mode is defined %}
+  capture_mode: {{ synapse_config_ids_capture_mode | quote }}
+{% endif %}
+{% if synapse_config_ids_rule_paths is defined %}
+  rule_paths: {{ synapse_config_ids_rule_paths | to_json }}
+{% endif %}
+{% if synapse_config_ids_enforce_block is defined %}
+  # true pushes IDS verdicts to the firewall; false is alert-only
+  enforce_block: {{ synapse_config_ids_enforce_block | bool | lower }}
+{% endif %}
+{% if synapse_config_ids_snaplen is defined %}
+  snaplen: {{ synapse_config_ids_snaplen | int }}
+{% endif %}
+{% if synapse_config_ids_address_vars is defined %}
+  # Suricata address variables ($HOME_NET, ...)
+  address_vars: {{ synapse_config_ids_address_vars | to_json }}
+{% endif %}
+{% if synapse_config_ids_port_vars is defined %}
+  port_vars: {{ synapse_config_ids_port_vars | to_json }}
+{% endif %}
+{% endif %}
+{% if synapse_config_ml_fingerprint_classifier_enabled is defined or synapse_config_ml_traffic_classifier_enabled is defined %}
+
+# On-device ML (needs an -ml package)
+ml:
+{% if synapse_config_ml_fingerprint_classifier_enabled is defined %}
+  fingerprint_classifier:
+    enabled: {{ synapse_config_ml_fingerprint_classifier_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_ml_traffic_classifier_enabled is defined %}
+  traffic_classifier:
+    enabled: {{ synapse_config_ml_traffic_classifier_enabled | bool | lower }}
+{% endif %}
+{% endif %}
 
 # Gen0Sec platform configuration
 platform:
