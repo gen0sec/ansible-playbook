@@ -150,6 +150,20 @@ platform:
 # Logging Configuration
 logging:
   level: {{ synapse_config_logging_level | default('info') | quote }}
+{% if synapse_config_logging_file_enabled is defined %}
+  # Application log files; without them a daemonized synapse's log, startup
+  # errors included, goes nowhere.
+  file_logging_enabled: {{ synapse_config_logging_file_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_logging_directory is defined %}
+  log_directory: {{ synapse_config_logging_directory | to_json }}
+{% endif %}
+{% if synapse_config_logging_max_size is defined %}
+  max_log_size: {{ synapse_config_logging_max_size | int }}
+{% endif %}
+{% if synapse_config_logging_file_count is defined %}
+  log_file_count: {{ synapse_config_logging_file_count | int }}
+{% endif %}
   # Unified fingerprint / BPF event log (replaces the per-type bpf_stats,
   # tcp_fingerprint, ... switches, which the loader now ignores)
   fingerprint_log:
