@@ -57,6 +57,7 @@
       ansible.builtin.file:
         path: "{{ synapse_rpm_key_file }}.download"
         state: absent
+      check_mode: false    # the download is real in check mode too
 
 - name: Import the signing key
   ansible.builtin.rpm_key:

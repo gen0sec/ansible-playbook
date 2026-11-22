@@ -40,6 +40,4 @@
       {{ synapse_repo_key_fingerprint }}: it must hold that one primary key
       and no other. Nothing was installed from it.
     quiet: true
-  when:
-    - synapse_key_fatal | bool
-    - not ansible_check_mode
+  when: synapse_key_fatal | bool
