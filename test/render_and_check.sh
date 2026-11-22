@@ -70,6 +70,8 @@ VARIANTS=(
   'agent_interfaces|{"synapse_config_mode":"agent","synapse_config_network_interfaces":{"wan":{"match":{"name":"eth1"},"features":["firewall","ids","smart_firewall","fingerprint"],"require_native":true},"lan":{"match":{"pattern":"enp3s*"},"features":["firewall"]}}}|^  interfaces:$|^  iface:'
   'agent_sensor|{"synapse_config_mode":"agent","synapse_config_network_interfaces":{"p0":{"match":{"name":"eth1"},"features":["firewall","ids"]}},"synapse_config_capture_enabled":true,"synapse_config_capture_mode":"xdp","synapse_config_firewall_enabled":true,"synapse_config_firewall_mode":"xdp","synapse_config_firewall_amygdala_enabled":true,"synapse_config_ids_enabled":true,"synapse_config_ids_capture_mode":"xdp","synapse_config_ids_rule_paths":["/etc/synapse/rules/*.rules"],"synapse_config_ids_enforce_block":true,"synapse_config_ids_snaplen":2048,"synapse_config_ids_address_vars":{"HOME_NET":"[10.0.0.0/8]","EXTERNAL_NET":"!$HOME_NET"},"synapse_config_ml_fingerprint_classifier_enabled":true,"synapse_config_ml_traffic_classifier_enabled":true}|^  enforce_block: true$'
   'agent_ids_off|{"synapse_config_mode":"agent","synapse_config_ids_enabled":false}|^  enabled: false$|^firewall:'
+  'agent_file_logging|{"synapse_config_mode":"agent","synapse_config_logging_file_enabled":true,"synapse_config_logging_directory":"/var/log/synapse","synapse_config_logging_max_size":1048576,"synapse_config_logging_file_count":5}|^  file_logging_enabled: true$'
+  'agent_no_file_logging_keys|{"synapse_config_mode":"agent"}||^  (file_logging_enabled|log_directory|max_log_size|log_file_count):'
 )
 
 rc=0

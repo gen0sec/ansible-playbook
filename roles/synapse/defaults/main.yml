@@ -102,6 +102,10 @@ redis_enabled: true   # Set to false to disable Redis installation  # noqa: var-
 
 # Logging
 # synapse_config_logging_level: "info"  # error, warn, info, debug, trace
+# synapse_config_logging_file_enabled: true          # app log files (startup errors of the daemon included)
+# synapse_config_logging_directory: "/var/log/synapse"
+# synapse_config_logging_max_size: 104857600         # bytes per file before rotation
+# synapse_config_logging_file_count: 10              # rotated files kept
 # synapse_config_logging_fingerprint_log_enabled: true
 # synapse_config_logging_fingerprint_log_file: "/var/log/synapse/fingerprints.log"
 
