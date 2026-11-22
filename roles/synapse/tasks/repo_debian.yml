@@ -85,6 +85,7 @@
       ansible.builtin.file:
         path: "{{ synapse_apt_keyring }}.download"
         state: absent
+      check_mode: false    # the download is real in check mode too
 
 - name: Add the Gen0Sec apt source
   ansible.builtin.copy:
