@@ -45,6 +45,34 @@ redis_enabled: true   # Set to false to disable Redis installation  # noqa: var-
 # synapse_config_network_ifaces: []  # List of interfaces, e.g. ["eth0", "eth1"]
 # synapse_config_network_ip_version: "both"  # "ipv4", "ipv6", or "both"
 
+# Per-interface XDP attach (written to network.interfaces). When set, it
+# replaces iface/ifaces: only the matched links are attached, each with its
+# own features; anything not listed (a management port) is left alone.
+# Features: firewall, ids, ids_egress, smart_firewall, fingerprint, ssl_uprobe.
+# synapse_config_network_interfaces:
+#   wan:
+#     match: { name: eth1 }           # or { mac: "..." } or { pattern: "enp3s*" }
+#     features: [firewall, ids, smart_firewall, fingerprint]
+#     require_native: true            # refuse generic (SKB) XDP
+
+# Engines. Each section is written only when one of its variables is set, so
+# an unset one keeps Synapse's code default (the IDS is off by default; the
+# shipped config.yaml turns it on).
+# synapse_config_capture_enabled: true
+# synapse_config_capture_mode: "auto"            # auto, xdp, af_packet, af_packet_recv
+# synapse_config_firewall_enabled: true
+# synapse_config_firewall_mode: "auto"           # auto, xdp, nftables, iptables, none
+# synapse_config_firewall_amygdala_enabled: true # smart firewall
+# synapse_config_ids_enabled: true
+# synapse_config_ids_capture_mode: "xdp"         # xdp or afpacketrecv
+# synapse_config_ids_rule_paths: ["/etc/synapse/rules/*.rules"]
+# synapse_config_ids_enforce_block: true         # push IDS verdicts to the firewall
+# synapse_config_ids_snaplen: 512                # 2048 covers a 1500-byte MTU frame
+# synapse_config_ids_address_vars: { HOME_NET: "[10.0.0.0/8]", EXTERNAL_NET: "!$HOME_NET" }
+# synapse_config_ids_port_vars: {}
+# synapse_config_ml_fingerprint_classifier_enabled: true  # -ml package
+# synapse_config_ml_traffic_classifier_enabled: true      # -ml package
+
 # Redis configuration (written to proxy.redis; proxy mode only)
 # synapse_config_redis_url: "redis://127.0.0.1/0"  # default "" when redis_enabled is false
 # synapse_config_redis_prefix: "g0s:synapse"
