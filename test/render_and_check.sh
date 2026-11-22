@@ -53,6 +53,7 @@ PLAY
 
 # name|extra vars (JSON)|ERE that must match the rendered file|ERE that must not match
 # (the last two are optional)
+# shellcheck disable=SC2016  # $HOME_NET is a Suricata variable, not shell
 VARIANTS=(
   'agent|{"synapse_config_mode":"agent"}|^platform:|^proxy:'
   'agent_default_mode|{}'
