@@ -110,12 +110,22 @@ redis_enabled: true   # Set to false to disable Redis installation  # noqa: var-
 # synapse_config_logging_syslog_enabled: true
 # synapse_config_logging_syslog_facility: daemon
 # synapse_config_logging_syslog_identifier: synapse
-# Security events in CEF (logging.cef), written as given. syslog.facility and
-# syslog.severity are numbers (local4 = 20, info = 6); host is "address:port".
+# Security events in CEF (logging.cef), written as given. Synapse writes them
+# to /var/log/synapse/cef.log, and with syslog.enabled also sends them as RFC
+# 5424 syslog. syslog.host is a bare name or address and the port is separate
+# ("host:port" passes --check-config but sends nothing); transport is udp or
+# tcp, tag the app name, facility and severity numbers (local4 = 20, info = 6).
 # CEF runs only while file logging is enabled.
 # synapse_config_logging_cef:
 #   enabled: true
-#   syslog: { host: "127.0.0.1:5514", facility: 20, severity: 6 }
+#   syslog:
+#     enabled: true
+#     host: 127.0.0.1
+#     port: 5514
+#     transport: udp
+#     tag: synapse-cef
+#     facility: 20
+#     severity: 6
 # synapse_config_logging_fingerprint_log_enabled: true
 # synapse_config_logging_fingerprint_log_file: "/var/log/synapse/fingerprints.log"
 
