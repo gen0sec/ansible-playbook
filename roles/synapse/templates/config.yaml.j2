@@ -101,7 +101,9 @@ ids:
   managed_rules_refresh_secs: {{ synapse_config_ids_managed_rules_refresh_secs | int }}
 {% endif %}
 {% endif %}
-{% if synapse_config_ml_fingerprint_classifier_enabled is defined or synapse_config_ml_traffic_classifier_enabled is defined %}
+{% if synapse_config_ml_fingerprint_classifier_enabled is defined or synapse_config_ml_traffic_classifier_enabled is defined
+      or synapse_config_ml_flow_classifier_enabled is defined or synapse_config_ml_jepa_embedder_enabled is defined
+      or synapse_config_ml_penalty_enabled is defined %}
 
 # On-device ML (needs an -ml package)
 ml:
@@ -112,6 +114,18 @@ ml:
 {% if synapse_config_ml_traffic_classifier_enabled is defined %}
   traffic_classifier:
     enabled: {{ synapse_config_ml_traffic_classifier_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_ml_flow_classifier_enabled is defined %}
+  flow_classifier:
+    enabled: {{ synapse_config_ml_flow_classifier_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_ml_jepa_embedder_enabled is defined %}
+  jepa_embedder:
+    enabled: {{ synapse_config_ml_jepa_embedder_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_ml_penalty_enabled is defined %}
+  penalty:
+    enabled: {{ synapse_config_ml_penalty_enabled | bool | lower }}
 {% endif %}
 {% endif %}
 
