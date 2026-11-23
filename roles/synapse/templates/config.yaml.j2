@@ -66,7 +66,8 @@ firewall:
 {% if synapse_config_ids_enabled is defined or synapse_config_ids_capture_mode is defined
       or synapse_config_ids_rule_paths is defined or synapse_config_ids_enforce_block is defined
       or synapse_config_ids_snaplen is defined or synapse_config_ids_address_vars is defined
-      or synapse_config_ids_port_vars is defined %}
+      or synapse_config_ids_port_vars is defined
+      or synapse_config_ids_managed_rules_refresh_secs is defined %}
 
 # Inline IDS (Thalamus). The code default is off; the shipped config.yaml
 # turns it on.
@@ -93,6 +94,11 @@ ids:
 {% endif %}
 {% if synapse_config_ids_port_vars is defined %}
   port_vars: {{ synapse_config_ids_port_vars | to_json }}
+{% endif %}
+{% if synapse_config_ids_managed_rules_refresh_secs is defined %}
+  # Poll for new managed rules every N seconds as well as on platform pushes
+  # (0: push only). Also retries a sync that failed, e.g. at startup.
+  managed_rules_refresh_secs: {{ synapse_config_ids_managed_rules_refresh_secs | int }}
 {% endif %}
 {% endif %}
 {% if synapse_config_ml_fingerprint_classifier_enabled is defined or synapse_config_ml_traffic_classifier_enabled is defined %}
