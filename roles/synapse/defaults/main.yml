@@ -73,6 +73,11 @@ redis_enabled: true   # Set to false to disable Redis installation  # noqa: var-
 # synapse_config_ids_port_vars: {}
 # synapse_config_ml_fingerprint_classifier_enabled: true  # -ml package
 # synapse_config_ml_traffic_classifier_enabled: true      # -ml package
+# Further platform models (each synced from the platform once enabled; the
+# workspace's plan must include ML, or the manifests answer 402):
+# synapse_config_ml_flow_classifier_enabled: true        # -ml package
+# synapse_config_ml_jepa_embedder_enabled: true          # -ml package
+# synapse_config_ml_penalty_enabled: true                # -ml package
 
 # Redis configuration (written to proxy.redis; proxy mode only)
 # synapse_config_redis_url: "redis://127.0.0.1/0"  # default "" when redis_enabled is false
