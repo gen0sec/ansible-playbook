@@ -127,11 +127,15 @@ platform:
     path: {{ synapse_config_platform_threat_path | default('/var/lib/synapse') | quote }}
     headers: {{ synapse_config_platform_threat_headers | default(None) | to_json }}
     refresh_secs: {{ synapse_config_platform_threat_refresh_secs | default(300) }}
-{% if synapse_mode != 'agent' %}
-  # GeoIP MMDB Configuration
-  # Synapse ships with the IPinfo Lite bundle: one database carries both
-  # country and ASN, so `asn` and `city` are unused (empty) by default.
+{% if synapse_mode != 'agent' or synapse_config_geoip_enabled | default(false) | bool %}
+  # GeoIP MMDB Configuration (proxy mode; agent mode with
+  # synapse_config_geoip_enabled, for country/ASN access rules and enriched
+  # events). Synapse ships with the IPinfo Lite bundle: one database carries
+  # both country and ASN, so `asn` and `city` are unused (empty) by default.
   geoip:
+{% if synapse_config_geoip_enabled is defined %}
+    enabled: {{ synapse_config_geoip_enabled | bool | lower }}
+{% endif %}
     country:
       url: {{ synapse_config_geoip_country_url | default('https://github.com/gen0sec/geoip-databases/raw/download/ipinfo_lite.mmdb') | to_json }}
       path: {{ synapse_config_geoip_country_path | default('/var/lib/synapse/ipinfo_lite.mmdb') | to_json }}

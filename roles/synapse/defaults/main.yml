@@ -92,9 +92,12 @@ redis_enabled: true   # Set to false to disable Redis installation  # noqa: var-
 # synapse_config_content_scanning_enabled: false
 # synapse_config_content_scanning_clamav_server: "localhost:3310"
 
-# GeoIP (written to platform.geoip; proxy mode only). Defaults follow the
-# shipped config/config.yaml: the combined IPinfo Lite database serves country
-# and ASN, so asn and city are empty (unused).
+# GeoIP (written to platform.geoip): always in proxy mode, and in agent mode
+# when synapse_config_geoip_enabled is true (which also sets
+# platform.geoip.enabled). Defaults follow the shipped config/config.yaml: the
+# combined IPinfo Lite database serves country and ASN, so asn and city are
+# empty (unused).
+# synapse_config_geoip_enabled: true
 # synapse_config_geoip_country_url: "https://github.com/gen0sec/geoip-databases/raw/download/ipinfo_lite.mmdb"
 # synapse_config_geoip_country_path: "/var/lib/synapse/ipinfo_lite.mmdb"
 # synapse_config_geoip_asn_url: ""
