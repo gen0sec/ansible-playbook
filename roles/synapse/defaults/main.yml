@@ -66,6 +66,7 @@ redis_enabled: true   # Set to false to disable Redis installation  # noqa: var-
 # synapse_config_ids_enabled: true
 # synapse_config_ids_capture_mode: "xdp"         # xdp or afpacketrecv
 # synapse_config_ids_rule_paths: ["/etc/synapse/rules/*.rules"]
+# synapse_config_ids_managed_rules_refresh_secs: 900  # also poll for managed rules (0: push only)
 # synapse_config_ids_enforce_block: true         # push IDS verdicts to the firewall
 # synapse_config_ids_snaplen: 512                # 2048 covers a 1500-byte MTU frame
 # synapse_config_ids_address_vars: { HOME_NET: "[10.0.0.0/8]", EXTERNAL_NET: "!$HOME_NET" }
