@@ -47,7 +47,8 @@ capture:
   mode: {{ synapse_config_capture_mode | quote }}
 {% endif %}
 {% endif %}
-{% if synapse_config_firewall_enabled is defined or synapse_config_firewall_mode is defined or synapse_config_firewall_amygdala_enabled is defined %}
+{% if synapse_config_firewall_enabled is defined or synapse_config_firewall_mode is defined or synapse_config_firewall_amygdala_enabled is defined
+      or synapse_config_firewall_max_ip_filter_entries_v4 is defined or synapse_config_firewall_max_ip_filter_entries_v6 is defined %}
 
 # Firewall: backend and smart firewall (amygdala)
 firewall:
@@ -61,6 +62,14 @@ firewall:
 {% if synapse_config_firewall_amygdala_enabled is defined %}
   amygdala:
     enabled: {{ synapse_config_firewall_amygdala_enabled | bool | lower }}
+{% endif %}
+{% if synapse_config_firewall_max_ip_filter_entries_v4 is defined %}
+  # Capacity of the kernel's address filter for access rules: a country rule
+  # expands into all of its address ranges.
+  max_ip_filter_entries_v4: {{ synapse_config_firewall_max_ip_filter_entries_v4 | int }}
+{% endif %}
+{% if synapse_config_firewall_max_ip_filter_entries_v6 is defined %}
+  max_ip_filter_entries_v6: {{ synapse_config_firewall_max_ip_filter_entries_v6 | int }}
 {% endif %}
 {% endif %}
 {% if synapse_config_ids_enabled is defined or synapse_config_ids_capture_mode is defined

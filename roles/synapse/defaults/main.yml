@@ -63,6 +63,10 @@ redis_enabled: true   # Set to false to disable Redis installation  # noqa: var-
 # synapse_config_firewall_enabled: true
 # synapse_config_firewall_mode: "auto"           # auto, xdp, nftables, iptables, none
 # synapse_config_firewall_amygdala_enabled: true # smart firewall
+# Address filter capacity for access rules (a country rule expands into all of
+# its ranges; too small and nothing is enforced: "BPF map error: No space left"):
+# synapse_config_firewall_max_ip_filter_entries_v4: 262144
+# synapse_config_firewall_max_ip_filter_entries_v6: 262144
 # synapse_config_ids_enabled: true
 # synapse_config_ids_capture_mode: "xdp"         # xdp or afpacketrecv
 # synapse_config_ids_rule_paths: ["/etc/synapse/rules/*.rules"]
