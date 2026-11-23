@@ -171,6 +171,18 @@ logging:
 {% if synapse_config_logging_fingerprint_log_file is defined %}
     file: {{ synapse_config_logging_fingerprint_log_file | to_json }}
 {% endif %}
+{% if synapse_config_logging_syslog_enabled is defined %}
+  # Application log to the local syslog (/dev/log)
+  syslog:
+    enabled: {{ synapse_config_logging_syslog_enabled | bool | lower }}
+    facility: {{ synapse_config_logging_syslog_facility | default('daemon') | quote }}
+    identifier: {{ synapse_config_logging_syslog_identifier | default('synapse') | quote }}
+{% endif %}
+{% if synapse_config_logging_cef is defined %}
+  # Security events in CEF, to a file and/or a syslog host. Synapse starts the
+  # CEF output only while file logging is enabled.
+  cef: {{ synapse_config_logging_cef | to_json }}
+{% endif %}
 
 # Daemon Configuration
 daemon:
