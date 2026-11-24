@@ -1,0 +1,23 @@
+---
+# Workspace policies on the Gen0Sec platform, applied through the management
+# API from the control machine (playbook policy.yml); the key never reaches the
+# hosts. See roles/policy/README.md.
+
+# Management API key: agents:read, and read/write/delete on the rule types the
+# policy files manage. Read from GEN0SEC_MANAGEMENT_API_KEY on the control
+# machine, so it is not written to a file or an argument list. Without it the
+# role is skipped with a warning.
+policy_api_key: "{{ lookup('ansible.builtin.env', 'GEN0SEC_MANAGEMENT_API_KEY') }}"
+policy_endpoint: "{{ lookup('ansible.builtin.env', 'GEN0SEC_ENDPOINT') | default('https://api.gen0sec.com', true) }}"
+
+# The policy files to apply, one per workspace (see policies/example.yml.example).
+policy_files: "{{ query('ansible.builtin.fileglob', playbook_dir ~ '/policies/*.yml') | sort }}"
+
+# Rules carrying this tag are owned by Ansible. Owned rules removed from a policy
+# file are deleted when policy_prune is true. Rules without the tag are
+# kept or deleted per workspace (unowned in the policy file).
+policy_owner_tag: ansible
+policy_prune: true
+
+# User-Agent of the management API requests.
+policy_user_agent: "gen0sec-policy-ansible/1.0"

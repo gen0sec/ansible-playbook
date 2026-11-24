@@ -1,0 +1,67 @@
+---
+# A workspace policy for policy.yml. Copy to policies/<name>.yml (one file per
+# workspace) and set workspace_id. Addresses here are documentation ranges.
+
+workspace_id: 00000000-0000-0000-0000-000000000000
+
+# keep: leave rules made in the dashboard or by other tools alone.
+# delete: remove them, so the workspace holds only this file (WAF rules excepted).
+unowned: keep
+
+# Tags put on every managed rule, next to "ansible".
+tags: [example]
+
+# auto: all writes in one transaction (batch endpoint), single calls on an API
+# without it; always: fail without it; never: single calls.
+batch: auto
+
+# Gen0Sec's managed IDS threat classes: all on; tier per class (alert or block),
+# default_tier for the rest (null keeps each class's own default); classes in
+# disabled are off. Leave the key out to not manage IDS classes.
+managed_ids:
+  default_tier: null
+  tiers: {}
+  disabled: []
+
+# Gen0Sec's managed smart firewall rules: all on, except the ids in excluded.
+managed_smart_firewall:
+  enabled: true
+  excluded: []
+
+# L3/L4 rules, enforced in the kernel. Key -> rule; the key is kept in the
+# rule's description as [ansible:<key>].
+firewall_rules:
+  ssh_admins:
+    name: ssh
+    direction: ingress
+    protocol: tcp
+    source: 198.51.100.0/24
+    destination_ports: "22"
+    action: allow
+    priority: 10
+  ssh_others:
+    name: ssh
+    direction: ingress
+    protocol: tcp
+    destination_ports: "22"
+    action: drop
+    priority: 19
+
+# Allow or block by IP/network, ASN or country. Matched by type and value.
+access_rules:
+  scanner:
+    type: ipv4
+    value: 203.0.113.7
+    action: block
+    description: known scanner
+
+# Connection-level Wirefilter rules. log matches without enforcing.
+smart_firewall_rules:
+  telnet_outside:
+    name: Telnet from outside
+    expression: tcp.dst_port == 23 and ids.src_home_net == 0
+    action: log
+    order: 100
+
+# Custom WAF rules for agents in proxy mode.
+waf_rules: {}
