@@ -1,0 +1,274 @@
+---
+# Tests roles/policy/library/gen0sec_policy.py against test/fake_gen0sec_api.py.
+# Run by test/policy.sh (make test).
+- name: Test gen0sec_policy against the fake API
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    api: http://127.0.0.1:18080
+    ws_path: "{{ api }}/management/v1/workspaces/ws-1"
+    auth: {Authorization: "Bearer test-key"}
+    base: &base
+      endpoint: "{{ api }}"
+      api_key: test-key
+      workspace_id: ws-1
+      extra_tags: [firewall-sensor]
+      managed_ids: {default_tier: alert, tiers: {recon: block}, disabled: []}
+      managed_smart_firewall: {enabled: true, excluded: []}
+    rules_v1:
+      firewall_rules:
+        telnet_in: {name: legacy, direction: ingress, protocol: tcp, destination_ports: "23", conn_state: new, action: drop, priority: 100}
+        smb_in: {name: legacy, direction: ingress, protocol: tcp, destination_ports: "445", action: drop}
+        ntp_out: {name: ntp, direction: egress, protocol: udp, destination_ports: "123", action: allow, description: "time sync"}
+      access_rules:
+        scanner: {type: ipv4, value: 203.0.113.7, action: block, description: known scanner}
+        partner: {type: ipv4, value: 198.51.100.0/24, action: allow}
+      smart_firewall_rules:
+        ssh_outside: {name: SSH from outside, expression: "tcp.dst_port == 22", action: log}
+  tasks:
+    - name: Dry run reports creations
+      gen0sec_policy: "{{ base | combine(rules_v1) }}"
+      check_mode: true
+      register: dry
+    - name: Dry run wrote nothing
+      ansible.builtin.uri: {url: "{{ api }}/_calls", headers: "{{ auth }}"}
+      register: calls0
+    - name: "Check: dry run wrote nothing"
+      ansible.builtin.assert:
+        that:
+          - dry is changed
+          - dry.actions.firewall_rules.created | length == 3
+          - dry.actions.access_rules.created | length == 2
+          - dry.actions.managed_ids.created | length == 3
+          - dry.actions.managed_smart_firewall.created | length == 2
+          - calls0.json["items"]["ws-1"] | length == 0
+
+    - name: Apply
+      gen0sec_policy: "{{ base | combine(rules_v1) }}"
+      register: first
+    - name: Read the writes of the apply
+      ansible.builtin.uri: {url: "{{ api }}/_calls", headers: "{{ auth }}"}
+      register: calls1
+    - name: "Check: read the writes of the apply"
+      ansible.builtin.assert:
+        that:
+          - first is changed
+          - "first.ids_classes == {'recon': 'block', 'malware': 'alert', 'exploit': 'alert'}"
+          - first.agents[0].hostname == "firewall"
+          # All writes in one batch (one transaction): 3 firewall, 2 access,
+          # 1 smart firewall, 3 IDS classes, 2 managed smart firewall rules.
+          - "first.requests == {'batches': 1, 'single': 0}"
+          - calls1.json["items"]["ws-1"][0] == "BATCH 11"
+        fail_msg: "{{ first.requests | default('') | to_json }} / {{ calls1.json['items']['ws-1'] | to_json }}"
+
+    - name: Apply again (idempotent)
+      gen0sec_policy: "{{ base | combine(rules_v1) }}"
+      register: second
+    - name: "Check: apply again (idempotent)"
+      ansible.builtin.assert:
+        that: second is not changed
+        fail_msg: "{{ second.actions | to_json }}"
+
+    - name: Read the firewall rules
+      ansible.builtin.uri: {url: "{{ ws_path }}/firewall-rules?all=1", headers: "{{ auth }}"}
+      register: fw
+    - name: Drift - change an owned rule outside Ansible
+      vars:
+        telnet: "{{ fw.json['items'] | selectattr('description', 'search', 'ansible:telnet_in') | first }}"
+      ansible.builtin.uri:
+        url: "{{ ws_path }}/firewall-rules/{{ telnet.id }}"
+        method: PUT
+        headers: "{{ auth | combine({'If-Match': '\"' ~ telnet.version ~ '\"'}) }}"
+        body_format: json
+        body: "{{ telnet | combine({'action': 'allow'}) }}"
+    - name: Dashboard rule (not owned) appears
+      ansible.builtin.uri:
+        url: "{{ ws_path }}/firewall-rules"
+        method: POST
+        status_code: 201
+        headers: "{{ auth }}"
+        body_format: json
+        body: {name: dashboard, direction: ingress, protocol: tcp, destination_ports: "8080", action: drop, tags: [manual]}
+
+    - name: Apply puts the drift back and leaves the dashboard rule alone
+      gen0sec_policy: "{{ base | combine(rules_v1) }}"
+      register: third
+    - name: "Check: apply puts the drift back and leaves the dashboard rule alone"
+      ansible.builtin.assert:
+        that:
+          - third.actions.firewall_rules.updated == ["telnet_in"]
+          - third.actions.firewall_rules.created == []
+          - third.actions.firewall_rules.deleted == []
+
+    - name: Change the policy - drop smb_in, edit an access rule, switch exploit off
+      gen0sec_policy: >-
+        {{ base | combine({
+             'firewall_rules': rules_v1.firewall_rules | dict2items | rejectattr('key', 'eq', 'smb_in') | items2dict,
+             'access_rules': rules_v1.access_rules | combine({'scanner': rules_v1.access_rules.scanner | combine({'description': 'scanner, seen again'})}),
+             'smart_firewall_rules': rules_v1.smart_firewall_rules,
+             'managed_ids': {'default_tier': 'alert', 'tiers': {'recon': 'block'}, 'disabled': ['exploit']}}) }}
+      register: fifth
+    - name: "Check: change the policy - drop smb_in, edit an access rule, switch exploit off"
+      ansible.builtin.assert:
+        that:
+          - fifth.actions.firewall_rules.deleted == ["smb_in"]
+          - fifth.actions.access_rules.updated == ["ipv4:203.0.113.7"]
+          - fifth.actions.managed_ids.deleted == ["exploit"]
+          - fifth.ids_classes.exploit == 'off'
+        fail_msg: "{{ fifth.actions | to_json }}"
+
+    - name: The dashboard rule survived
+      ansible.builtin.uri: {url: "{{ ws_path }}/firewall-rules?all=1", headers: "{{ auth }}"}
+      register: fw2
+    - name: "Check: the dashboard rule survived"
+      ansible.builtin.assert:
+        that:
+          - fw2.json["items"] | selectattr('name', 'eq', 'dashboard') | list | length == 1
+          - fw2.json["items"] | length == 3
+
+    - name: With unowned=delete, check mode lists the dashboard rule and deletes nothing
+      gen0sec_policy: >-
+        {{ base | combine({'unowned': 'delete', 'managed_ids': omit, 'managed_smart_firewall': omit,
+             'firewall_rules': rules_v1.firewall_rules | dict2items | rejectattr('key', 'eq', 'smb_in') | items2dict,
+             'access_rules': rules_v1.access_rules | combine({'scanner': rules_v1.access_rules.scanner | combine({'description': 'scanner, seen again'})}),
+             'smart_firewall_rules': rules_v1.smart_firewall_rules}) }}
+      check_mode: true
+      register: un_dry
+    - name: Read the firewall rules
+      ansible.builtin.uri: {url: "{{ ws_path }}/firewall-rules?all=1", headers: "{{ auth }}"}
+      register: fw3
+    - name: "Check: unowned=delete in check mode lists the dashboard rule and deletes nothing"
+      ansible.builtin.assert:
+        that:
+          - un_dry is changed
+          - un_dry.actions.firewall_rules.deleted | length == 1
+          - un_dry.actions.firewall_rules.deleted[0] is match('unowned:dashboard#')
+          - fw3.json["items"] | selectattr('name', 'eq', 'dashboard') | list | length == 1
+        fail_msg: "{{ un_dry.actions | to_json }}"
+
+    - name: With unowned=delete, the run removes the dashboard rule and keeps the owned ones
+      gen0sec_policy: >-
+        {{ base | combine({'unowned': 'delete', 'managed_ids': omit, 'managed_smart_firewall': omit,
+             'firewall_rules': rules_v1.firewall_rules | dict2items | rejectattr('key', 'eq', 'smb_in') | items2dict,
+             'access_rules': rules_v1.access_rules | combine({'scanner': rules_v1.access_rules.scanner | combine({'description': 'scanner, seen again'})}),
+             'smart_firewall_rules': rules_v1.smart_firewall_rules}) }}
+      register: un_apply
+    - name: Read the firewall rules
+      ansible.builtin.uri: {url: "{{ ws_path }}/firewall-rules?all=1", headers: "{{ auth }}"}
+      register: fw4
+    - name: "Check: unowned=delete removes the dashboard rule and keeps the owned ones"
+      ansible.builtin.assert:
+        that:
+          - un_apply.actions.firewall_rules.deleted | length == 1
+          - fw4.json["items"] | selectattr('name', 'eq', 'dashboard') | list | length == 0
+          - fw4.json["items"] | length == 2
+        fail_msg: "{{ un_apply.actions | to_json }} / {{ fw4.json['items'] | map(attribute='name') | list }}"
+
+    - name: Dashboard WAF rule (not owned) appears
+      ansible.builtin.uri:
+        url: "{{ ws_path }}/waf-rules"
+        method: POST
+        status_code: 201
+        headers: "{{ auth }}"
+        body_format: json
+        body: {name: Content scan test, expression: 'http.request.method eq "POST"', action: content_scan, order: 0}
+
+    - name: WAF rules - an owned allow is created, unowned=delete keeps the dashboard WAF rule
+      gen0sec_policy: >-
+        {{ base | combine({'unowned': 'delete', 'managed_ids': omit, 'managed_smart_firewall': omit,
+             'firewall_rules': rules_v1.firewall_rules | dict2items | rejectattr('key', 'eq', 'smb_in') | items2dict,
+             'access_rules': rules_v1.access_rules | combine({'scanner': rules_v1.access_rules.scanner | combine({'description': 'scanner, seen again'})}),
+             'smart_firewall_rules': rules_v1.smart_firewall_rules,
+             'waf_rules': {'dashboard_console': {'name': 'Dashboard console bundle', 'action': 'allow', 'order': 10,
+                                                 'expression': 'http.request.path matches "^/[0-9]+/bundles/plugin/console/"'}}}) }}
+      register: waf_apply
+    - name: Read the WAF rules
+      ansible.builtin.uri: {url: "{{ ws_path }}/waf-rules?all=1", headers: "{{ auth }}"}
+      register: waf1
+    - name: "Check: wAF rules - an owned allow is created, unowned=delete keeps the dashboard WAF rule"
+      ansible.builtin.assert:
+        that:
+          - waf_apply.actions.waf_rules.created == ["dashboard_console"]
+          - waf_apply.actions.waf_rules.deleted == []
+          - waf1.json["items"] | selectattr('name', 'eq', 'Content scan test') | list | length == 1
+          - (waf1.json["items"] | selectattr('name', 'eq', 'Dashboard console bundle') | first).description == "[ansible:dashboard_console]"
+        fail_msg: "{{ waf_apply.actions | to_json }} / {{ waf1.json['items'] | to_json }}"
+
+    - name: Writes open before they close - the allow is created before the drop
+      gen0sec_policy: >-
+        {{ base | combine({'managed_ids': omit, 'managed_smart_firewall': omit, 'access_rules': {}, 'smart_firewall_rules': {},
+             'firewall_rules': {
+               'a_drop':  {'name': 'order', 'direction': 'ingress', 'destination': '192.0.2.10', 'action': 'drop', 'priority': 51},
+               'z_allow': {'name': 'order', 'direction': 'ingress', 'protocol': 'tcp', 'destination': '192.0.2.10', 'destination_ports': '22', 'action': 'allow', 'priority': 50}}}) }}
+      register: order_run
+    - name: Read the writes the fake API saw
+      ansible.builtin.uri: {url: "{{ api }}/_calls", headers: "{{ auth }}"}
+      register: order_calls
+    - name: "Check: writes open before they close - the allow is created before the drop"
+      ansible.builtin.assert:
+        that:
+          - (order_calls.json["items"]["ws-1"] | select('match', '^POST firewall-rules') | list)[-2:] == ['POST firewall-rules allow', 'POST firewall-rules drop']
+        fail_msg: "{{ order_calls.json['items']['ws-1'] | select('match', '^(POST|DELETE) firewall-rules') | list }}"
+
+    - name: Without the batch endpoint (older API), the writes go one by one
+      ansible.builtin.uri: {url: "{{ api }}/_batch/off", headers: "{{ auth }}"}
+    - name: Apply a change without the batch endpoint
+      gen0sec_policy: >-
+        {{ base | combine({'managed_ids': omit, 'managed_smart_firewall': omit, 'access_rules': {}, 'smart_firewall_rules': {},
+             'firewall_rules': {'z_allow': {'name': 'order', 'direction': 'ingress', 'protocol': 'tcp', 'destination': '192.0.2.10',
+                                            'destination_ports': '22', 'action': 'allow', 'priority': 50}}}) }}
+      register: nobatch
+    - name: Switch the batch endpoint back on
+      ansible.builtin.uri: {url: "{{ api }}/_batch/on", headers: "{{ auth }}"}
+    - name: "Check: apply a change without the batch endpoint"
+      ansible.builtin.assert:
+        that:
+          - nobatch is changed
+          - nobatch.requests.batches == 0
+          - nobatch.requests.single == 1
+        fail_msg: "{{ nobatch.requests | default('') | to_json }}"
+
+    - name: With batch=never, the run sends single calls although the endpoint exists
+      gen0sec_policy: >-
+        {{ base | combine({'batch': 'never', 'managed_ids': omit, 'managed_smart_firewall': omit, 'access_rules': {},
+             'smart_firewall_rules': {}, 'firewall_rules': {}}) }}
+      register: never
+    - name: "Check: batch=never sends single calls although the endpoint exists"
+      ansible.builtin.assert:
+        that:
+          - never is changed
+          - "never.requests == {'batches': 0, 'single': 1}"
+        fail_msg: "{{ never.requests | default('') | to_json }}"
+
+    - name: A batch is all or nothing - a failing write leaves the workspace as it was
+      ansible.builtin.uri:
+        url: "{{ ws_path }}/batch"
+        method: POST
+        headers: "{{ auth }}"
+        body_format: json
+        status_code: 404
+        body:
+          operations:
+            - {method: POST, path: access-rules, body: {type: ipv4, value: 192.0.2.99, action: block}}
+            - {method: DELETE, path: firewall-rules/00000000-0000-0000-0000-000000000000}
+      register: rolled_back
+    - name: Read the access rules
+      ansible.builtin.uri: {url: "{{ ws_path }}/access-rules?all=1", headers: "{{ auth }}"}
+      register: acc_after
+    - name: "Check: a batch is all or nothing - a failing write leaves the workspace as it was"
+      ansible.builtin.assert:
+        that:
+          - "'operations[1]' in rolled_back.json.detail"
+          - acc_after.json["items"] | selectattr('value', 'eq', '192.0.2.99') | list | length == 0
+
+    - name: Two access rules for the same address are refused
+      gen0sec_policy: >-
+        {{ base | combine({'access_rules': {'a': {'type': 'ipv4', 'value': '192.0.2.1', 'action': 'block'},
+                                            'b': {'type': 'ipv4', 'value': '192.0.2.1', 'action': 'allow'}}}) }}
+      register: dup
+      ignore_errors: true
+    - name: "Check: two access rules for the same address are refused"
+      ansible.builtin.assert:
+        that: dup is failed and 'same rule' in dup.msg

@@ -18,6 +18,8 @@ file, so both the packages and the metadata are signature-checked.
 - `playbook.yml`: the main playbook.
 - `roles/synapse/`: repository setup, package install, host preparation and `config.yaml` rendering.
 - `roles/fail2ban/`: optional Fail2Ban integration with the Gen0Sec API.
+- `policy.yml`, `roles/policy/`: workspace policies (IDS classes, firewall, access, smart firewall and WAF rules) through the management API; see [Workspace policies](#workspace-policies).
+- `policies/example.yml.example`: a starting point for a policy file.
 - `group_vars/all_example.yml`, `hosts.example`: starting points for your variables and inventory.
 - `test/`: tests that run without a Synapse binary.
 
@@ -88,6 +90,24 @@ Settable through group_vars, the inventory or `-e`:
 - `gen0sec_api_key`: Gen0Sec API key, used by Synapse and Fail2Ban (optional).
 - `synapse_config_*`: map to `config.yaml` settings; see `roles/synapse/defaults/main.yml` and `roles/synapse/templates/config.yaml.j2`.
 
+## Workspace policies
+
+`policy.yml` applies the policies in `policies/*.yml`, one file per workspace,
+through the Gen0Sec management API from the control machine (the hosts are not
+contacted). Each run's writes are sent as one batch, so the agents receive the
+new policy as one configuration, all or nothing.
+
+```bash
+cp policies/example.yml.example policies/production.yml   # set workspace_id and the rules
+export GEN0SEC_MANAGEMENT_API_KEY=...                      # agents:read, and rules read/write/delete
+ansible-playbook policy.yml --check --diff                 # what would change
+ansible-playbook policy.yml
+```
+
+The key is read from the environment, like the repository key. See
+[roles/policy/README.md](roles/policy/README.md) for the policy file format and
+how rules are owned and reconciled.
+
 ## Migrating from the earlier role
 
 A host with an old `/etc/systemd/system/synapse.service` that runs
@@ -102,7 +122,7 @@ replaces it. A unit that differs is left alone with a warning. A binary at
 make help      # list the targets
 make install   # ansible-core, ansible-lint, yamllint
 make lint      # yamllint and ansible-lint
-make build     # playbook syntax check
+make build     # playbook syntax checks (playbook.yml, policy.yml)
 make test      # tests that need no Synapse binary, network or root
 GEN0SEC_REPO_KEY=... make test-install DISTRO=ubuntu MODE=agent   # needs docker
 ```

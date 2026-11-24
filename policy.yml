@@ -1,0 +1,14 @@
+---
+# Applies the workspace policies in policies/*.yml through the Gen0Sec
+# management API, from this machine:
+#
+#   export GEN0SEC_MANAGEMENT_API_KEY=...
+#   ansible-playbook policy.yml --check --diff   # what would change
+#   ansible-playbook policy.yml
+- name: Apply the Gen0Sec workspace policies
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  roles:
+    - policy

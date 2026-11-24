@@ -1,0 +1,35 @@
+---
+- name: Warn about the missing management API key
+  ansible.builtin.debug:
+    msg: >-
+      Policy skipped: no management API key. Export GEN0SEC_MANAGEMENT_API_KEY
+      on the control machine (dash.gen0sec.com, Settings, API keys).
+  when: not policy_api_key
+
+# Two policy files for one workspace would fight over its owned rules.
+- name: Refuse two policy files for the same workspace
+  ansible.builtin.assert:
+    that: _policy_dupes | length == 0
+    fail_msg: "These policy files name the same workspace_id: {{ _policy_dupes | join(', ') }}."
+    quiet: true
+  vars:
+    _policy_ids: >-
+      {%- set ids = {} -%}
+      {%- for f in policy_files -%}
+      {%-   set i = (lookup('ansible.builtin.file', f) | from_yaml).workspace_id | default('') -%}
+      {%-   if i -%}{%- set _ = ids.update({i: ids.get(i, []) + [f | basename]}) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ ids }}
+    _policy_dupes: >-
+      {%- set d = [] -%}
+      {%- for i, files in _policy_ids.items() if files | length > 1 -%}{%- set _ = d.extend(files) -%}{%- endfor -%}
+      {{ d }}
+  when: policy_api_key | length > 0
+
+- name: Apply each policy file
+  ansible.builtin.include_tasks: apply.yml
+  loop: "{{ policy_files }}"
+  loop_control:
+    loop_var: policy_file
+    label: "{{ policy_file | basename }}"
+  when: policy_api_key | length > 0

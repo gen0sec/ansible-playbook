@@ -7,3 +7,6 @@ exclude_paths:
   - .cache/
 # Findings that predate the import carry an inline `# noqa: <rule>`, so CI
 # blocks only new ones. They are removed in follow-ups.
+# The policy role's module (roles/policy/library), used by test/policy_module.yml.
+mock_modules:
+  - gen0sec_policy

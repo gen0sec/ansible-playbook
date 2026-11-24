@@ -1,0 +1,43 @@
+---
+- name: Read {{ policy_file | basename }}
+  ansible.builtin.include_vars:
+    file: "{{ policy_file }}"
+    name: policy_ws
+
+- name: Check {{ policy_file | basename }}
+  ansible.builtin.assert:
+    that:
+      - policy_ws.workspace_id | default('') | length > 0
+      - policy_ws.unowned | default('keep') in ['keep', 'delete']
+      - policy_ws.batch | default('auto') in ['auto', 'always', 'never']
+    fail_msg: >-
+      {{ policy_file | basename }} needs a workspace_id; unowned must be
+      keep or delete, and batch auto, always or never.
+    quiet: true
+
+- name: Reconcile workspace {{ policy_ws.workspace_id }}
+  gen0sec_policy:
+    api_key: "{{ policy_api_key }}"
+    endpoint: "{{ policy_endpoint }}"
+    user_agent: "{{ policy_user_agent }}"
+    workspace_id: "{{ policy_ws.workspace_id }}"
+    owner_tag: "{{ policy_owner_tag }}"
+    extra_tags: "{{ policy_ws.tags | default([]) }}"
+    prune: "{{ policy_prune }}"
+    unowned: "{{ policy_ws.unowned | default('keep') }}"
+    batch: "{{ policy_ws.batch | default('auto') }}"
+    managed_ids: "{{ policy_ws.managed_ids | default(omit) }}"
+    managed_smart_firewall: "{{ policy_ws.managed_smart_firewall | default(omit) }}"
+    firewall_rules: "{{ policy_ws.firewall_rules | default({}) }}"
+    access_rules: "{{ policy_ws.access_rules | default({}) }}"
+    smart_firewall_rules: "{{ policy_ws.smart_firewall_rules | default({}) }}"
+    waf_rules: "{{ policy_ws.waf_rules | default({}) }}"
+  register: policy_result
+
+- name: Report workspace {{ policy_ws.workspace_id }}
+  ansible.builtin.debug:
+    msg:
+      - "policy: {{ policy_file | basename }} (workspace {{ policy_ws.workspace_id }})"
+      - "agents: {{ policy_result.agents | map(attribute='hostname') | unique | join(', ') or 'none' }}"
+      - "changes: {{ policy_result.actions | to_json }}"
+      - "sent: {{ policy_result.requests | default({}) | to_json }} (batches: one transaction each; single: no batch endpoint)"

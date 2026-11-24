@@ -22,8 +22,9 @@ install: ## Install the pinned ansible tools, and unpack Fail2Ban's Python packa
 		echo "NOTE: no apt-get/dpkg-deb here; test/fail2ban_action.py needs the fail2ban Python package (set GEN0SEC_FAIL2BAN_PYTHONPATH to its dist-packages)"; \
 	fi
 
-build: ## Syntax-check the playbook
+build: ## Syntax-check the playbooks
 	ansible-playbook -i localhost, --syntax-check playbook.yml
+	ansible-playbook -i localhost, --syntax-check policy.yml
 
 test: ## Run the tests that need no synapse binary
 	shellcheck test/*.sh
@@ -36,6 +37,7 @@ test: ## Run the tests that need no synapse binary
 	bash test/secret_protections.sh
 	bash test/verify_key.sh
 	bash test/apt_refresh.sh
+	bash test/policy.sh
 
 DISTRO ?= ubuntu
 MODE ?= agent
